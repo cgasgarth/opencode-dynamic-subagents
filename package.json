@@ -1,10 +1,18 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-dynamic-subagents",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "OpenCode plugin that injects user-defined subagents and enables runtime model selection for task-based subagent calls.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cgasgarth/opencode-dynamic-subagents.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cgasgarth/opencode-dynamic-subagents/issues"
+  },
+  "homepage": "https://github.com/cgasgarth/opencode-dynamic-subagents#readme",
   "private": false,
   "engines": {
     "node": ">=22"
