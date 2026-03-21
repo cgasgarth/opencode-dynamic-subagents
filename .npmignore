@@ -1,0 +1,12 @@
+.env
+.env.*
+src/
+coverage/
+.github/
+docs/
+*.ts
+*.map
+!dist/
+!dist/**
+!README.md
+!LICENSE

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "opencode-dynamic-subagents",
+  "version": "0.1.0",
+  "description": "OpenCode plugin scaffold for dynamically defined subagents.",
+  "type": "module",
+  "license": "MIT",
+  "private": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "npm@11.11.0",
+  "main": "./dist/entrypoint.js",
+  "module": "./dist/entrypoint.js",
+  "types": "./dist/entrypoint.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/entrypoint.d.ts",
+      "default": "./dist/entrypoint.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "npm run lint && npm run typecheck",
+    "clean": "rm -rf dist",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "^1.2.27"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@types/node": "^22.13.14",
+    "@typescript-eslint/eslint-plugin": "^8.27.0",
+    "@typescript-eslint/parser": "^8.27.0",
+    "eslint": "^9.22.0",
+    "globals": "^15.15.0",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.27.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
