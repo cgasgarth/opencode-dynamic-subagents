@@ -2,6 +2,10 @@
 
 OpenCode plugin that injects user-defined subagents from `~/.config/opencode/dynamicSubAgents.json` and extends the `task` tool with runtime `model` and `variant` selection.
 
+Recommended models:
+- `openai/gpt-5.4`
+- `openai/gpt-5.4-mini`
+
 ## Install
 
 Add the plugin to your OpenCode config:
@@ -20,14 +24,14 @@ Create `~/.config/opencode/dynamicSubAgents.json`:
   "$schema": "https://github.com/cgasgarth/opencode-dynamic-subagents/blob/main/dynamicSubAgents.schema.json",
   "version": 1,
   "defaults": {
-    "allowedModels": ["openai/gpt-5.1-codex"],
+    "allowedModels": ["openai/gpt-5.4", "openai/gpt-5.4-mini"],
     "allowedVariants": ["low", "high"]
   },
   "agents": {
     "review": {
       "description": "Code review subagent",
       "prompt": "Review the supplied changes.",
-      "model": "openai/gpt-5.1-codex",
+      "model": "openai/gpt-5.4",
       "variant": "high"
     }
   }
