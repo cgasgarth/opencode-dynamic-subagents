@@ -20,15 +20,6 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["src/entrypoint.ts", "src/types.ts"],
-  "exclude": [
-    "dist",
-    "coverage",
-    "node_modules",
-    "src/index.ts",
-    "src/plugin.ts",
-    "src/runtime.ts",
-    "src/config-schema.ts",
-    "test"
-  ]
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["dist", "coverage", "node_modules"]
 }

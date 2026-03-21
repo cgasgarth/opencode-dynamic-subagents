@@ -6,31 +6,27 @@ const fileLimitRule = ["error", { max: 500, skipBlankLines: true, skipComments: 
 
 export default tseslint.config(
   {
-    ignores: [
-      "dist/**",
-      "coverage/**",
-      "node_modules/**",
-      "src/plugin.ts",
-      "src/runtime.ts",
-      "src/config-schema.ts",
-      "src/index.ts",
-      "test/**",
-    ],
+    ignores: ["dist/**", "coverage/**", "node_modules/**", "eslint.config.mjs"],
   },
   js.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...tseslint.configs.strictTypeChecked,
+  ...tseslint.configs.stylisticTypeChecked,
   {
     languageOptions: {
       globals: {
         ...globals.node,
       },
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     rules: {
       "@typescript-eslint/consistent-type-definitions": ["error", "type"],
-      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "max-lines": fileLimitRule,
-      "no-console": "error"
+      "no-console": "error",
     },
   },
 )

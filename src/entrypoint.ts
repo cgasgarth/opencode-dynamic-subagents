@@ -1,12 +1,11 @@
+export { DynamicSubAgentsPlugin, DynamicSubAgentsPlugin as default } from "./plugin.js"
 export type {
-  AgentMode,
   AgentPermission,
-  AgentPermissionValue,
-  DynamicSubAgentConfig,
-  DynamicSubAgentTemplate,
-  ModelRef,
-  NormalizedDynamicSubAgent,
-  SpawnSubAgentInput,
+  DynamicSubAgent,
+  DynamicSubAgentDefaults,
+  DynamicSubAgentInput,
+  DynamicSubAgentsConfig,
+  ResolvedModel,
 } from "./types.js"
 
 export const PACKAGE_NAME = "opencode-dynamic-subagents" as const

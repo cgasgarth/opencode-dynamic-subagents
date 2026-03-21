@@ -1,72 +1,64 @@
-export type ModelRef = {
-  providerID: string
-  modelID: string
-}
-
-export type AgentMode = "subagent" | "primary" | "all"
-
-export type AgentPermissionValue = "allow" | "deny" | "ask" | AgentPermission
+export type PermissionAction = "allow" | "ask" | "deny"
 
 export type AgentPermission = {
-  [key: string]: AgentPermissionValue | undefined
+  [key: string]: AgentPermission | PermissionAction
 }
 
-export type DynamicSubAgentTemplate = {
-  description: string
-  prompt: string
+export type DynamicSubAgentDefaults = {
+  titlePrefix?: string
   model?: string
   variant?: string
-  mode?: AgentMode
-  hidden?: boolean
   temperature?: number
   top_p?: number
-  steps?: number
   color?: string
+  hidden?: boolean
+  steps?: number
   permission?: AgentPermission
   options?: Record<string, unknown>
-  allowedModels?: string[]
-  allowedVariants?: string[]
+  allowedModels?: readonly string[]
+  allowedVariants?: readonly string[]
 }
 
-export type DynamicSubAgentConfig = {
-  defaults?: {
-    model?: string
-    variant?: string
-    mode?: AgentMode
-    hidden?: boolean
-    temperature?: number
-    top_p?: number
-    steps?: number
-    color?: string
-    permission?: AgentPermission
-  }
-  allowedModels?: string[]
-  allowedVariants?: string[]
-  templates: Record<string, DynamicSubAgentTemplate>
-}
-
-export type NormalizedDynamicSubAgent = {
-  name: string
+export type DynamicSubAgentInput = {
   description: string
-  prompt: string
+  prompt?: string
   model?: string
   variant?: string
-  mode: AgentMode
-  hidden?: boolean
   temperature?: number
   top_p?: number
-  steps?: number
   color?: string
-  permission: AgentPermission
-  options: Record<string, unknown>
-  allowedModels: string[]
-  allowedVariants: string[]
+  hidden?: boolean
+  steps?: number
+  permission?: AgentPermission
+  options?: Record<string, unknown>
+  allowedModels?: readonly string[]
+  allowedVariants?: readonly string[]
 }
 
-export type SpawnSubAgentInput = {
-  template: string
+export type DynamicSubAgentsConfig = {
+  version: 1
+  defaults?: DynamicSubAgentDefaults
+  agents: Record<string, DynamicSubAgentInput>
+}
+
+export type DynamicSubAgent = {
+  name: string
+  description: string
   prompt?: string
-  title?: string
   model?: string
   variant?: string
+  temperature?: number
+  top_p?: number
+  color?: string
+  hidden?: boolean
+  steps?: number
+  permission?: AgentPermission
+  options: Record<string, unknown>
+  allowedModels: readonly string[]
+  allowedVariants: readonly string[]
+}
+
+export type ResolvedModel = {
+  providerID: string
+  modelID: string
 }
