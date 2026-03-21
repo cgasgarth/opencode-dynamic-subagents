@@ -43,6 +43,7 @@ Create `~/.config/opencode/dynamicSubAgents.json`:
 - Dynamic agents are injected as normal OpenCode subagents.
 - The plugin overrides `task` so model and variant can be selected per subagent call.
 - Validation is driven by `dynamicSubAgents.json`.
+- npm Trusted Publishing workflow: `.github/workflows/publish.yml`
 
 ## Dev
 
@@ -53,3 +54,13 @@ npm run typecheck
 npm run test
 npm run build
 ```
+
+## Release
+
+Configure npm Trusted Publishing for:
+
+- GitHub user/org: `cgasgarth`
+- Repository: `opencode-dynamic-subagents`
+- Workflow filename: `publish.yml`
+
+After that, publish from GitHub Actions via the `Publish` workflow or a GitHub Release.
