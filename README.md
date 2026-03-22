@@ -41,7 +41,7 @@ Create `~/.config/opencode/dynamicSubAgents.json`:
       {
         "id": "openai/gpt-5.3-codex-spark",
         "name": "spark",
-        "description": "Faster, cheaper code-focused option for small code implementations or quickly searching for things."
+        "description": "Faster, cheaper code-focused option for small code implementations or quickly searching for things. Best for tightly scoped, shorter tasks because it has a more limited context window."
       }
     ],
     "allowedVariants": ["low", "high"]
@@ -99,7 +99,7 @@ Supported config:
       {
         "id": "openai/gpt-5.3-codex-spark",
         "name": "spark",
-        "description": "Faster, cheaper code-focused option for small code implementations or quickly searching for things."
+        "description": "Faster, cheaper code-focused option for small code implementations or quickly searching for things. Best for tightly scoped, shorter tasks because it has a more limited context window."
       }
     ],
     "allowedVariants": ["low", "medium", "high", "xhigh"]
