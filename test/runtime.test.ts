@@ -109,6 +109,38 @@ void test("loadDynamicSubAgentsConfig loads a valid policy config", async () => 
   }
 })
 
+void test("loadDynamicSubAgentsConfig rejects invalid config shapes", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "opencode-dynamic-subagents-invalid-"))
+  const configPath = path.join(tempDir, "dynamicSubAgents.json")
+
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 1,
+      defaults: {
+        allowedModels: [
+          {
+            description: "Missing model id",
+          },
+        ],
+      },
+    }),
+  )
+
+  const original = process.env["OPENCODE_DYNAMIC_SUBAGENTS_CONFIG"]
+  process.env["OPENCODE_DYNAMIC_SUBAGENTS_CONFIG"] = configPath
+
+  try {
+    await assert.rejects(() => loadDynamicSubAgentsConfig())
+  } finally {
+    if (original === undefined) {
+      delete process.env["OPENCODE_DYNAMIC_SUBAGENTS_CONFIG"]
+    } else {
+      process.env["OPENCODE_DYNAMIC_SUBAGENTS_CONFIG"] = original
+    }
+  }
+})
+
 void test("resolvePolicy normalizes runtime defaults into a strict policy", () => {
   const policy = resolvePolicy({
     version: 1,
