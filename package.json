@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-dynamic-subagents",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "OpenCode plugin that adds policy-controlled dynamic subagents with runtime model and variant selection.",
   "type": "module",
   "license": "MIT",
