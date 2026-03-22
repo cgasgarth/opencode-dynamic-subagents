@@ -98,6 +98,7 @@ export function createTaskTool(pluginInput: PluginInput, state: TaskToolState): 
         agent: string
         model?: ResolvedModel
         variant?: string
+        tools?: Record<string, boolean>
         parts: { type: "text"; text: string }[]
       } = {
         agent: targetAgent,
@@ -106,6 +107,7 @@ export function createTaskTool(pluginInput: PluginInput, state: TaskToolState): 
 
       if (model) body.model = model
       if (variant) body.variant = variant
+      if (isDynamic) body.tools = { task: false }
 
       const result = await pluginInput.client.session.prompt({
         path: { id: session.id },
