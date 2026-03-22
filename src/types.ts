@@ -32,6 +32,7 @@ export type DynamicSubAgentLimits = {
 }
 
 export type DynamicSubAgentsConfig = {
+  $schema?: string
   version: 1
   defaults?: DynamicSubAgentDefaults
   runtime?: DynamicSubAgentRuntime

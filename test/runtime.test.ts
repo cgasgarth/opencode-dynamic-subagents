@@ -61,6 +61,7 @@ void test("loadDynamicSubAgentsConfig loads a valid policy config", async () => 
   await writeFile(
     configPath,
     JSON.stringify({
+      $schema: "https://example.com/dynamicSubAgents.schema.json",
       version: 1,
       defaults: {
         model: "openai/gpt-5.4-mini",
@@ -81,6 +82,7 @@ void test("loadDynamicSubAgentsConfig loads a valid policy config", async () => 
   try {
     const config = await loadDynamicSubAgentsConfig()
     assert.ok(config)
+    assert.equal(config.$schema, "https://example.com/dynamicSubAgents.schema.json")
     assert.equal(config.runtime?.agentName, "dynamic-runtime")
     assert.equal(config.defaults?.model, "openai/gpt-5.4-mini")
   } finally {

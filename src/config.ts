@@ -58,6 +58,7 @@ const limitsSchema = z
 
 const dynamicSubAgentsConfigSchema = z
   .object({
+    $schema: z.string().min(1).optional(),
     version: z.literal(1).default(1),
     defaults: defaultsSchema.optional(),
     runtime: runtimeSchema.optional(),
