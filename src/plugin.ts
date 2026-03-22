@@ -1,72 +1,101 @@
 import type { Plugin } from "@opencode-ai/plugin"
 
-import { buildTaskDescription, collectConfiguredSubagents, injectRuntimeSubagent, loadDynamicSubAgentsConfig, resolvePolicy } from "./config.js"
-import { createTaskTool } from "./task-tool.js"
-import type { ConfiguredSubagentSummary } from "./types.js"
+import {
+  buildDynamicTaskAgentConfig,
+  buildTaskDescription,
+  collectConfiguredSubagents,
+  loadDynamicSubAgentsConfig,
+  resolvePolicy,
+  validateDynamicSubagentRequest,
+  validateModelSelection,
+  validateVariantSelection,
+} from "./config.js"
+import type { ConfiguredSubagentSummary, DynamicTaskAgentConfig } from "./types.js"
 
-type PluginConfigShape = Parameters<typeof collectConfiguredSubagents>[0] & {
-  agent?: Record<string, { permission?: unknown } | undefined>
-  experimental?: {
-    primary_tools?: readonly string[]
-  }
-}
+type PluginConfigShape = Parameters<typeof collectConfiguredSubagents>[0]
+
 type SystemTransformOutput = {
   system: string[]
 }
 
-type RuntimeState = {
-  configuredSubagents: readonly ConfiguredSubagentSummary[]
-  runtimeAgentName?: string
-  primaryTools: readonly string[]
-  taskPermissionAgents: ReadonlySet<string>
+type TaskToolArgs = {
+  description?: unknown
+  prompt?: unknown
+  subagent_type?: unknown
+  subagent_description?: unknown
+  model?: unknown
+  variant?: unknown
+  agent_config?: unknown
 }
 
-export const DynamicSubAgentsPlugin: Plugin = (input) => {
+type RuntimeState = {
+  configuredSubagents: readonly ConfiguredSubagentSummary[]
+}
+
+export const DynamicSubAgentsPlugin: Plugin = () => {
   const state: RuntimeState = {
     configuredSubagents: [],
-    primaryTools: [],
-    taskPermissionAgents: new Set<string>(),
   }
 
-  const taskTool = createTaskTool(input, state)
-
   return Promise.resolve({
-    async config(config: PluginConfigShape) {
-      const dynamicConfig = await loadDynamicSubAgentsConfig()
-
+    config(config: PluginConfigShape) {
       state.configuredSubagents = collectConfiguredSubagents(config)
-      state.primaryTools = config.experimental?.primary_tools ?? []
-      state.taskPermissionAgents = collectTaskPermissionAgents(config.agent)
-      delete state.runtimeAgentName
-
-      if (!dynamicConfig) return
-
-      const policy = resolvePolicy(dynamicConfig)
-      const collision = injectRuntimeSubagent(config, policy)
-
-      if (collision) {
-        await input.client.app.log({
-          body: {
-            service: "opencode-dynamic-subagents",
-            level: "warn",
-            message: "Skipped dynamic runtime agent injection because the configured runtime agent name already exists",
-            extra: {
-              runtimeAgentName: collision,
-            },
-          },
-        })
-
-        return
-      }
-
-      state.runtimeAgentName = policy.runtimeAgentName
-      if (hasExplicitTaskPermission(policy.permission)) {
-        state.taskPermissionAgents = new Set(state.taskPermissionAgents).add(policy.runtimeAgentName)
-      }
-      state.configuredSubagents = collectConfiguredSubagents(config, policy.runtimeAgentName)
+      return Promise.resolve()
     },
-    tool: {
-      task: taskTool,
+    "tool.execute.before": async (hookInput, output) => {
+      if (hookInput.tool !== "task") return
+
+      const args = output.args as TaskToolArgs
+      const dynamicConfig = await loadDynamicSubAgentsConfig()
+      const policy = dynamicConfig ? resolvePolicy(dynamicConfig) : undefined
+
+      const model = typeof args.model === "string" && args.model.length > 0 ? args.model : undefined
+      const variant = typeof args.variant === "string" && args.variant.length > 0 ? args.variant : undefined
+
+      if (policy && model) {
+        validateModelSelection(policy, model)
+      }
+
+      if (policy && variant) {
+        validateVariantSelection(policy, variant)
+      }
+
+      const subagentDescription =
+        typeof args.subagent_description === "string" && args.subagent_description.length > 0
+          ? args.subagent_description
+          : undefined
+      if (!subagentDescription) return
+
+      if (!policy) {
+        throw new Error("Dynamic subagents require ~/.config/opencode/dynamicSubAgents.json.")
+      }
+
+      if (typeof args.description !== "string" || typeof args.prompt !== "string" || typeof args.subagent_type !== "string") {
+        throw new Error("Dynamic subagent task arguments are incomplete.")
+      }
+
+      validateDynamicSubagentRequest(
+        policy,
+        {
+          subagentType: args.subagent_type,
+          subagentDescription: subagentDescription,
+          taskDescription: args.description,
+          prompt: args.prompt,
+        },
+        state.configuredSubagents.map((subagent) => subagent.name),
+      )
+
+      if (!model && policy.model) {
+        validateModelSelection(policy, policy.model)
+        args.model = policy.model
+      }
+
+      if (!variant && policy.variant) {
+        validateVariantSelection(policy, policy.variant)
+        args.variant = policy.variant
+      }
+
+      args.agent_config = buildDynamicTaskAgentConfig(policy) satisfies DynamicTaskAgentConfig
     },
     "experimental.chat.system.transform": async (_hookInput: unknown, output: SystemTransformOutput) => {
       const dynamicConfig = await loadDynamicSubAgentsConfig()
@@ -75,22 +104,6 @@ export const DynamicSubAgentsPlugin: Plugin = (input) => {
       output.system.push(buildTaskDescription(state.configuredSubagents, policy))
     },
   })
-}
-
-export function collectTaskPermissionAgents(agents: PluginConfigShape["agent"]): ReadonlySet<string> {
-  const result = new Set<string>()
-
-  for (const [name, agent] of Object.entries(agents ?? {})) {
-    if (hasExplicitTaskPermission(agent?.permission)) {
-      result.add(name)
-    }
-  }
-
-  return result
-}
-
-export function hasExplicitTaskPermission(permission: unknown): boolean {
-  return typeof permission === "object" && permission !== null && "task" in permission
 }
 
 export default DynamicSubAgentsPlugin

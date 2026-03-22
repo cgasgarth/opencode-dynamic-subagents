@@ -4,13 +4,13 @@
 
 Adds policy-controlled dynamic subagents to OpenCode.
 
-Instead of forcing you to predefine every subagent up front, this plugin injects one hidden backing subagent and extends the `task` tool so the orchestrating agent can choose a runtime subagent name, specialization, model, and thinking variant for each task.
+Instead of forcing you to predefine every subagent up front, this plugin validates dynamic subagent requests against `dynamicSubAgents.json` and lets OpenCode's native `task` flow handle the actual child session.
 
 ## What You Get
 
 - Ad hoc subagents without predeclaring each one in OpenCode config
 - Per-task model and variant selection, validated against your allowlist
-- Hidden runtime agent injection that stays compatible with OpenCode's named-agent model
+- Native OpenCode task/session handling instead of a plugin-owned task override
 - Model descriptions surfaced back to the orchestrator to improve model choice
 
 ## Install
@@ -68,13 +68,13 @@ When the orchestrator chooses the dynamic path, it provides:
 
 ## How It Works
 
-OpenCode’s built-in task system requires a real named subagent. It does not support anonymous inline subagent definitions. This plugin works within that constraint by:
+This plugin does not replace the built-in `task` tool anymore. Instead it works as a policy layer around OpenCode's native dynamic task support:
 
-1. Injecting one hidden runtime subagent into OpenCode config.
-2. Overriding the `task` tool.
-3. Treating `subagent_description` as the signal that the call should run as a dynamic subagent.
-4. Validating `model` and `variant` against `dynamicSubAgents.json`.
-5. Wrapping the task prompt with the runtime specialization before sending it to the hidden backing agent.
+1. It appends guidance so the orchestrator knows dynamic subagents are available.
+2. It watches `task` calls in `tool.execute.before`.
+3. When `subagent_description` is present, it validates the dynamic request against `dynamicSubAgents.json`.
+4. It applies default `model` and `variant` when omitted.
+5. It passes policy-backed agent settings into the native OpenCode task flow.
 
 Existing named subagents still work normally. The dynamic path is only used when the model provides `subagent_description`.
 
@@ -85,7 +85,7 @@ The plugin reads:
 - `~/.config/opencode/dynamicSubAgents.json`
 - `$OPENCODE_DYNAMIC_SUBAGENTS_CONFIG` if you want to override the path for testing
 
-Defaults are applied automatically. Add config when you want to restrict models, variants, runtime naming, or prompt size.
+Defaults are applied automatically. Add config when you want to restrict models, variants, or prompt size.
 
 ```jsonc
 {
@@ -104,10 +104,6 @@ Defaults are applied automatically. Add config when you want to restrict models,
       }
     ],
     "allowedVariants": ["low", "medium", "high", "xhigh"]
-  },
-  "runtime": {
-    "agentName": "dynamic-subagent-runtime",
-    "description": "Internal runtime for dynamic subagent execution."
   },
   "limits": {
     "maxSubagentNameLength": 64,
@@ -134,7 +130,7 @@ Model descriptions from config are surfaced back into task guidance so the orche
 ## Notes
 
 - Tested OpenAI model strings: `openai/gpt-5.4`, `openai/gpt-5.3-codex-spark`
-- OpenCode still requires a concrete agent name for task execution, so this plugin uses a hidden runtime subagent internally
+- This plugin expects an OpenCode build that supports native dynamic task parameters (`subagent_description`, `model`, `variant`)
 - `$schema` is supported in `dynamicSubAgents.json`
 - The plugin has been tested locally with the installed `opencode` CLI using vague delegation prompts and explicit model selection
 

@@ -5,10 +5,8 @@ import * as path from "node:path"
 import { test } from "node:test"
 
 import {
-  buildDynamicTaskPrompt,
   buildTaskDescription,
   collectConfiguredSubagents,
-  injectRuntimeSubagent,
   loadDynamicSubAgentsConfig,
   parseModel,
   resolveConfigPath,
@@ -150,7 +148,6 @@ void test("resolvePolicy normalizes runtime defaults into a strict policy", () =
     },
   })
 
-  assert.equal(policy.runtimeAgentName, "dynamic-subagent-runtime")
   assert.equal(policy.model, "openai/gpt-5.4-mini")
   assert.deepEqual(policy.allowedVariants, ["high"])
   assert.deepEqual(policy.allowedModels, [])
@@ -178,52 +175,6 @@ void test("resolvePolicy normalizes string and object allowed model entries", ()
       description: "Fast code-focused model for cheaper subagents.",
     },
   ])
-})
-
-void test("injectRuntimeSubagent adds a hidden backing agent", () => {
-  const config = {
-    agent: {} as Record<string, { mode?: "primary" | "subagent" | "all"; hidden?: boolean }>,
-  }
-  const collision = injectRuntimeSubagent(
-    config,
-    resolvePolicy({
-      version: 1,
-      runtime: {
-        agentName: "dynamic-runtime",
-      },
-    }),
-  )
-
-  assert.equal(collision, null)
-  const runtimeAgent = config.agent["dynamic-runtime"]
-  assert.ok(runtimeAgent)
-  assert.equal(runtimeAgent.mode, "subagent")
-  assert.equal(runtimeAgent.hidden, true)
-})
-
-void test("injectRuntimeSubagent preserves an existing runtime agent", () => {
-  const config = {
-    agent: {
-      "dynamic-runtime": {
-        mode: "subagent" as const,
-        description: "Existing runtime",
-      },
-    },
-  }
-
-  const collision = injectRuntimeSubagent(
-    config,
-    resolvePolicy({
-      version: 1,
-      runtime: {
-        agentName: "dynamic-runtime",
-        description: "New runtime",
-      },
-    }),
-  )
-
-  assert.equal(collision, "dynamic-runtime")
-  assert.equal(config.agent["dynamic-runtime"].description, "Existing runtime")
 })
 
 void test("collectConfiguredSubagents excludes primary agents", () => {
@@ -370,23 +321,6 @@ void test("validateVariantSelection rejects disallowed variants", () => {
     },
     /is not allowed by dynamicSubAgents\.json/,
   )
-})
-
-void test("buildDynamicTaskPrompt embeds runtime specialization", () => {
-  const prompt = buildDynamicTaskPrompt({
-    subagentType: "perf-auditor",
-    subagentDescription: "Investigate runtime bottlenecks",
-    taskDescription: "Audit performance",
-    prompt: "Profile the request path and summarize hotspots.",
-    workingDirectory: "/Users/cgas/Documents/Projects/Atelier",
-    projectRoot: "/Users/cgas/Documents/Projects/Atelier",
-  })
-
-  assert.match(prompt, /perf-auditor/)
-  assert.match(prompt, /Investigate runtime bottlenecks/)
-  assert.match(prompt, /Profile the request path/)
-  assert.match(prompt, /Current working directory: \/Users\/cgas\/Documents\/Projects\/Atelier/)
-  assert.match(prompt, /Do not invent absolute filesystem paths\./)
 })
 
 void test("buildTaskDescription explains named and dynamic subagents", () => {

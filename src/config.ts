@@ -9,6 +9,7 @@ import type {
   DynamicSubAgentDefaults,
   DynamicSubAgentModelOption,
   DynamicSubAgentPolicy,
+  DynamicTaskAgentConfig,
   DynamicSubagentRequest,
   DynamicSubAgentsConfig,
   ResolvedModel,
@@ -16,10 +17,6 @@ import type {
 
 const COLOR_OPTIONS = ["primary", "secondary", "accent", "success", "warning", "error", "info"] as const
 const CONFIG_ENV_NAME = "OPENCODE_DYNAMIC_SUBAGENTS_CONFIG"
-const DEFAULT_RUNTIME_AGENT_NAME = "dynamic-subagent-runtime"
-const DEFAULT_RUNTIME_DESCRIPTION = "Internal runtime for dynamic subagent execution."
-const DEFAULT_RUNTIME_PROMPT =
-  "You are an internal dynamic subagent runtime. Follow the dynamic role specification embedded in the user message for this run."
 const DEFAULT_MAX_SUBAGENT_NAME_LENGTH = 64
 const SUBAGENT_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/
 
@@ -114,14 +111,11 @@ export async function loadDynamicSubAgentsConfig(): Promise<DynamicSubAgentsConf
 
 export function resolvePolicy(config: DynamicSubAgentsConfig): DynamicSubAgentPolicy {
   return {
-    runtimeAgentName: config.runtime?.agentName ?? DEFAULT_RUNTIME_AGENT_NAME,
-    runtimeDescription: config.runtime?.description ?? DEFAULT_RUNTIME_DESCRIPTION,
     hidden: config.defaults?.hidden ?? true,
     options: config.defaults?.options ?? {},
     allowedModels: normalizeAllowedModels(config.defaults?.allowedModels),
     allowedVariants: config.defaults?.allowedVariants ?? [],
     maxSubagentNameLength: config.limits?.maxSubagentNameLength ?? DEFAULT_MAX_SUBAGENT_NAME_LENGTH,
-    ...(config.runtime?.prompt ?? DEFAULT_RUNTIME_PROMPT ? { runtimePrompt: config.runtime?.prompt ?? DEFAULT_RUNTIME_PROMPT } : {}),
     ...(config.defaults?.titlePrefix ? { titlePrefix: config.defaults.titlePrefix } : {}),
     ...(config.defaults?.model ? { model: config.defaults.model } : {}),
     ...(config.defaults?.variant ? { variant: config.defaults.variant } : {}),
@@ -137,35 +131,11 @@ export function resolvePolicy(config: DynamicSubAgentsConfig): DynamicSubAgentPo
   }
 }
 
-export function collectConfiguredSubagents(config: OpenCodeConfigShape, hiddenAgentName?: string): ConfiguredSubagentSummary[] {
+export function collectConfiguredSubagents(config: OpenCodeConfigShape): ConfiguredSubagentSummary[] {
   return Object.entries(config.agent ?? {})
     .map(([name, agent]) => toConfiguredSubagent(name, agent))
     .filter((agent): agent is ConfiguredSubagentSummary => Boolean(agent))
-    .filter((agent) => agent.name !== hiddenAgentName)
     .sort((left, right) => left.name.localeCompare(right.name))
-}
-
-export function injectRuntimeSubagent(config: OpenCodeConfigShape, policy: DynamicSubAgentPolicy): string | null {
-  config.agent ??= {}
-  if (policy.runtimeAgentName in config.agent) return policy.runtimeAgentName
-
-  const runtimeAgent: OpenCodeAgentConfig = {
-    mode: "subagent",
-    hidden: policy.hidden,
-    description: policy.runtimeDescription,
-    ...(policy.runtimePrompt ? { prompt: policy.runtimePrompt } : {}),
-    ...(policy.model ? { model: policy.model } : {}),
-    ...(policy.variant ? { variant: policy.variant } : {}),
-    ...(policy.temperature !== undefined ? { temperature: policy.temperature } : {}),
-    ...(policy.top_p !== undefined ? { top_p: policy.top_p } : {}),
-    ...(policy.color ? { color: policy.color } : {}),
-    ...(policy.steps !== undefined ? { steps: policy.steps } : {}),
-    ...(policy.permission !== undefined ? { permission: policy.permission } : {}),
-    ...policy.options,
-  }
-
-  config.agent[policy.runtimeAgentName] = runtimeAgent
-  return null
 }
 
 export function parseModel(model: string): ResolvedModel {
@@ -228,29 +198,6 @@ export function validateDynamicSubagentRequest(
   }
 }
 
-export function buildDynamicTaskPrompt(request: DynamicSubagentRequest): string {
-  const locationLines = [
-    ...(request.workingDirectory ? [`Current working directory: ${request.workingDirectory}`] : []),
-    ...(request.projectRoot && request.projectRoot !== request.workingDirectory
-      ? [`Project root: ${request.projectRoot}`]
-      : []),
-  ]
-
-  return [
-    `Dynamic subagent name: @${request.subagentType}`,
-    `Dynamic subagent specialization: ${request.subagentDescription}`,
-    `Task label: ${request.taskDescription}`,
-    "",
-    ...locationLines,
-    ...(locationLines.length > 0 ? [""] : []),
-    "Complete the following task using that specialization. Treat the specialization as authoritative for this run.",
-    "Resolve relative paths from the current working directory shown above.",
-    "Do not invent absolute filesystem paths. If the task gives a relative project path, use that exact relative path unless you verify a different path exists first.",
-    "",
-    request.prompt,
-  ].join("\n")
-}
-
 export function buildTaskDescription(
   subagents: readonly ConfiguredSubagentSummary[],
   policy: DynamicSubAgentPolicy | undefined,
@@ -283,6 +230,17 @@ export function buildTaskDescription(
     "",
     ...dynamicLines,
   ].join("\n")
+}
+
+export function buildDynamicTaskAgentConfig(policy: DynamicSubAgentPolicy): DynamicTaskAgentConfig {
+  return {
+    ...(policy.temperature !== undefined ? { temperature: policy.temperature } : {}),
+    ...(policy.top_p !== undefined ? { top_p: policy.top_p } : {}),
+    ...(policy.color ? { color: policy.color } : {}),
+    ...(policy.steps !== undefined ? { steps: policy.steps } : {}),
+    ...(policy.permission !== undefined ? { permission: policy.permission } : {}),
+    ...(Object.keys(policy.options).length > 0 ? { options: policy.options } : {}),
+  }
 }
 
 function toConfiguredSubagent(name: string, agent: OpenCodeAgentConfig | undefined): ConfiguredSubagentSummary | undefined {

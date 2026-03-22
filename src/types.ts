@@ -45,9 +45,6 @@ export type DynamicSubAgentsConfig = {
 }
 
 export type DynamicSubAgentPolicy = {
-  runtimeAgentName: string
-  runtimeDescription: string
-  runtimePrompt?: string
   titlePrefix?: string
   model?: string
   variant?: string
@@ -63,6 +60,16 @@ export type DynamicSubAgentPolicy = {
   maxSubagentNameLength: number
   maxTaskDescriptionLength?: number
   maxPromptLength?: number
+}
+
+export type DynamicTaskAgentConfig = {
+  prompt?: string
+  temperature?: number
+  top_p?: number
+  color?: string
+  steps?: number
+  permission?: AgentPermission
+  options?: Record<string, unknown>
 }
 
 export type ConfiguredSubagentSummary = {
