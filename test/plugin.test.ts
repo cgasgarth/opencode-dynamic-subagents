@@ -5,6 +5,7 @@ import * as path from "node:path"
 import { test } from "node:test"
 
 import { DynamicSubAgentsPlugin } from "../src/plugin.js"
+import type { GeneratedSubagentConfig } from "../src/types.js"
 
 async function withConfigFile<T>(config: unknown, fn: () => Promise<T>): Promise<T> {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "opencode-dynamic-subagents-plugin-"))
@@ -22,85 +23,88 @@ async function withConfigFile<T>(config: unknown, fn: () => Promise<T>): Promise
   }
 }
 
-void test("plugin validates and enriches dynamic task arguments through tool.execute.before", async () => {
+void test("plugin injects generated subagents into config", async () => {
   await withConfigFile(
     {
       version: 1,
       defaults: {
-        model: "openai/gpt-5.4",
-        variant: "high",
-        temperature: 0.2,
-        allowedModels: ["openai/gpt-5.4", "openai/gpt-5.3-codex-spark"],
-        allowedVariants: ["medium", "high"],
+        allowedModels: [
+          {
+            id: "openai/gpt-5.4",
+            name: "gpt54",
+            description: "Broad reasoning default.",
+          },
+          {
+            id: "openai/gpt-5.3-codex-spark",
+            name: "spark",
+            description: "Fast code search option.",
+          },
+        ],
+        allowedVariants: ["low", "high"],
       },
     },
     async () => {
       const hooks = await DynamicSubAgentsPlugin({} as never)
-      await hooks.config?.({
+      const config: {
+        agent: Record<string, GeneratedSubagentConfig | { mode: "subagent"; description: string }>
+      } = {
         agent: {
           review: {
             mode: "subagent",
             description: "Review changes",
           },
         },
-      } as never)
-
-      const output = {
-        args: {
-          description: "Search hooks",
-          prompt: "Inspect apps/studio/src/hooks for no-use-effect cleanup candidates.",
-          subagent_type: "spark-scout",
-          subagent_description: "Focused code search subagent",
-        } as Record<string, unknown>,
       }
 
-      await hooks["tool.execute.before"]?.(
-        {
-          tool: "task",
-          sessionID: "session-1",
-          callID: "call-1",
-        },
-        output,
-      )
+      await hooks.config?.(config as never)
 
-      assert.equal(output.args["model"], "openai/gpt-5.4")
-      assert.equal(output.args["variant"], "high")
-      assert.deepEqual(output.args["agent_config"], {
-        temperature: 0.2,
-      })
+      assert.ok(config.agent["dsa-gpt54-low"])
+      assert.ok(config.agent["dsa-gpt54-high"])
+      assert.ok(config.agent["dsa-spark-low"])
+      assert.ok(config.agent["dsa-spark-high"])
+      const sparkHigh = config.agent["dsa-spark-high"]
+      assert.ok(sparkHigh)
+      assert.equal("model" in sparkHigh ? sparkHigh.model : undefined, "openai/gpt-5.3-codex-spark")
+      assert.equal("variant" in sparkHigh ? sparkHigh.variant : undefined, "high")
+      assert.match(sparkHigh.description, /Fast code search option/)
     },
   )
 })
 
-void test("plugin rejects disallowed model overrides for task tool", async () => {
+void test("plugin leaves existing colliding agents untouched", async () => {
   await withConfigFile(
     {
       version: 1,
       defaults: {
-        allowedModels: ["openai/gpt-5.4"],
+        allowedModels: [
+          {
+            id: "openai/gpt-5.3-codex-spark",
+            name: "spark",
+          },
+        ],
+        allowedVariants: ["high"],
       },
     },
     async () => {
       const hooks = await DynamicSubAgentsPlugin({} as never)
+      const config: {
+        agent: Record<string, GeneratedSubagentConfig | { mode: "subagent"; description: string; model: string }>
+      } = {
+        agent: {
+          "dsa-spark-high": {
+            mode: "subagent",
+            description: "Existing agent",
+            model: "openai/gpt-5.4",
+          },
+        },
+      }
 
-      await assert.rejects(async () => {
-        await hooks["tool.execute.before"]?.(
-          {
-            tool: "task",
-            sessionID: "session-1",
-            callID: "call-1",
-          },
-          {
-            args: {
-              description: "Search hooks",
-              prompt: "Inspect hooks.",
-              subagent_type: "spark-scout",
-              subagent_description: "Focused code search subagent",
-              model: "openai/gpt-5.3-codex-spark",
-            },
-          },
-        )
-      }, /is not allowed by dynamicSubAgents\.json/)
+      await hooks.config?.(config as never)
+
+      const existing = config.agent["dsa-spark-high"]
+      assert.ok(existing)
+      assert.equal("model" in existing ? existing.model : undefined, "openai/gpt-5.4")
+      assert.equal(existing.description, "Existing agent")
     },
   )
 })

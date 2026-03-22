@@ -6,13 +6,14 @@ export type AgentPermission = {
 
 export type DynamicSubAgentModelOption = {
   id: string
+  name?: string
   description?: string
 }
 
 export type DynamicSubAgentDefaults = {
-  titlePrefix?: string
   model?: string
   variant?: string
+  prompt?: string
   temperature?: number
   top_p?: number
   color?: string
@@ -24,30 +25,21 @@ export type DynamicSubAgentDefaults = {
   allowedVariants?: readonly string[]
 }
 
-export type DynamicSubAgentRuntime = {
-  agentName?: string
-  description?: string
-  prompt?: string
-}
-
 export type DynamicSubAgentLimits = {
   maxSubagentNameLength?: number
-  maxTaskDescriptionLength?: number
-  maxPromptLength?: number
 }
 
 export type DynamicSubAgentsConfig = {
   $schema?: string
   version: 1
   defaults?: DynamicSubAgentDefaults
-  runtime?: DynamicSubAgentRuntime
   limits?: DynamicSubAgentLimits
 }
 
 export type DynamicSubAgentPolicy = {
-  titlePrefix?: string
   model?: string
   variant?: string
+  prompt?: string
   temperature?: number
   top_p?: number
   color?: string
@@ -58,11 +50,13 @@ export type DynamicSubAgentPolicy = {
   allowedModels: readonly DynamicSubAgentModelOption[]
   allowedVariants: readonly string[]
   maxSubagentNameLength: number
-  maxTaskDescriptionLength?: number
-  maxPromptLength?: number
 }
 
-export type DynamicTaskAgentConfig = {
+export type GeneratedSubagentConfig = {
+  mode: "subagent"
+  model: string
+  description: string
+  hidden: boolean
   prompt?: string
   temperature?: number
   top_p?: number
@@ -70,6 +64,7 @@ export type DynamicTaskAgentConfig = {
   steps?: number
   permission?: AgentPermission
   options?: Record<string, unknown>
+  variant?: string
 }
 
 export type ConfiguredSubagentSummary = {
@@ -78,13 +73,9 @@ export type ConfiguredSubagentSummary = {
   hidden: boolean
 }
 
-export type DynamicSubagentRequest = {
-  subagentType: string
-  subagentDescription: string
-  taskDescription: string
-  prompt: string
-  workingDirectory?: string
-  projectRoot?: string
+export type GeneratedSubagentDefinition = {
+  name: string
+  config: GeneratedSubagentConfig
 }
 
 export type ResolvedModel = {

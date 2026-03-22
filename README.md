@@ -2,29 +2,24 @@
 
 [![npm version](https://img.shields.io/npm/v/opencode-dynamic-subagents.svg)](https://www.npmjs.com/package/opencode-dynamic-subagents)
 
-Adds policy-controlled dynamic subagents to OpenCode.
+Adds generated model-pinned subagents to OpenCode.
 
-Instead of forcing you to predefine every subagent up front, this plugin validates dynamic subagent requests against `dynamicSubAgents.json` and lets OpenCode's native `task` flow handle the actual child session.
+Instead of trying to create truly ad hoc subagents at runtime, this plugin reads `dynamicSubAgents.json` and generates normal OpenCode subagents for each allowed model and thinking-level combination.
 
 ## What You Get
 
-- Ad hoc subagents without predeclaring each one in OpenCode config
-- Per-task model and variant selection, validated against your allowlist
-- Native OpenCode task/session handling instead of a plugin-owned task override
-- Model descriptions surfaced back to the orchestrator to improve model choice
+- Native OpenCode subagents with no `task` override
+- One generated agent per allowed model and variant
+- Model descriptions kept in config and surfaced in agent descriptions
+- Predictable native task/session behavior
 
 ## Install
 
-Add the package to your existing OpenCode config:
-
 ```jsonc
-// opencode.json
 {
   "plugin": ["opencode-dynamic-subagents@latest"]
 }
 ```
-
-If you already have other plugins configured, append this package to the same `plugin` array.
 
 Restart OpenCode after installing or updating the plugin.
 
@@ -37,55 +32,49 @@ Create `~/.config/opencode/dynamicSubAgents.json`:
   "$schema": "https://github.com/cgasgarth/opencode-dynamic-subagents/blob/main/dynamicSubAgents.schema.json",
   "version": 1,
   "defaults": {
-    "model": "openai/gpt-5.4",
     "allowedModels": [
       {
         "id": "openai/gpt-5.4",
-        "description": "Best default choice for broad reasoning and higher quality subagent work."
+        "name": "gpt54",
+        "description": "Best default choice for broad reasoning and higher-quality subagent work."
       },
       {
         "id": "openai/gpt-5.3-codex-spark",
-        "description": "Faster, lower-cost code-focused option for small code implementations or quickly searching for things."
+        "name": "spark",
+        "description": "Faster, cheaper code-focused option for small code implementations or quickly searching for things."
       }
     ],
-    "allowedVariants": ["low", "medium", "high", "xhigh"]
+    "allowedVariants": ["low", "high"]
   }
 }
 ```
 
-Restart OpenCode, then ask for delegation naturally:
+This generates native subagents like:
 
-```text
-Use a subagent to inspect the request path and summarize likely bottlenecks.
-```
-
-When the orchestrator chooses the dynamic path, it provides:
-
-- `subagent_type`
-- `subagent_description`
-- optional `model`
-- optional `variant`
+- `@dsa-gpt54-low`
+- `@dsa-gpt54-high`
+- `@dsa-spark-low`
+- `@dsa-spark-high`
 
 ## How It Works
 
-This plugin does not replace the built-in `task` tool anymore. Instead it works as a policy layer around OpenCode's native dynamic task support:
+The plugin only runs at config time.
 
-1. It appends guidance so the orchestrator knows dynamic subagents are available.
-2. It watches `task` calls in `tool.execute.before`.
-3. When `subagent_description` is present, it validates the dynamic request against `dynamicSubAgents.json`.
-4. It applies default `model` and `variant` when omitted.
-5. It passes policy-backed agent settings into the native OpenCode task flow.
+1. It loads `dynamicSubAgents.json`.
+2. It expands the allowed model list and allowed variant list into concrete subagent definitions.
+3. It injects those generated agents into `config.agent`.
+4. OpenCode then treats them like normal named subagents.
 
-Existing named subagents still work normally. The dynamic path is only used when the model provides `subagent_description`.
+If a generated name collides with an existing agent, the existing agent wins and the generated one is skipped.
 
 ## Configuration
 
 The plugin reads:
 
 - `~/.config/opencode/dynamicSubAgents.json`
-- `$OPENCODE_DYNAMIC_SUBAGENTS_CONFIG` if you want to override the path for testing
+- `$OPENCODE_DYNAMIC_SUBAGENTS_CONFIG` for testing overrides
 
-Defaults are applied automatically. Add config when you want to restrict models, variants, or prompt size.
+Supported config:
 
 ```jsonc
 {
@@ -93,46 +82,52 @@ Defaults are applied automatically. Add config when you want to restrict models,
   "version": 1,
   "defaults": {
     "model": "openai/gpt-5.4",
+    "variant": "high",
+    "prompt": "Optional shared prompt for generated subagents.",
+    "temperature": 0.2,
+    "top_p": 0.9,
+    "hidden": false,
+    "steps": 20,
+    "permission": {},
+    "options": {},
     "allowedModels": [
       {
         "id": "openai/gpt-5.4",
-        "description": "Best default choice for broad reasoning and higher quality subagent work."
+        "name": "gpt54",
+        "description": "Best default choice for broad reasoning and higher-quality subagent work."
       },
       {
         "id": "openai/gpt-5.3-codex-spark",
-        "description": "Faster, lower-cost code-focused option for small code implementations or quickly searching for things."
+        "name": "spark",
+        "description": "Faster, cheaper code-focused option for small code implementations or quickly searching for things."
       }
     ],
     "allowedVariants": ["low", "medium", "high", "xhigh"]
   },
   "limits": {
-    "maxSubagentNameLength": 64,
-    "maxTaskDescriptionLength": 120,
-    "maxPromptLength": 8000
+    "maxSubagentNameLength": 64
   }
 }
 ```
 
+Notes:
+
+- `allowedModels` is the source of truth for which model families get generated.
+- `name` is optional but recommended when you want short agent names like `dsa-spark-high`.
+- `description` is optional and becomes part of the generated agent description.
+- If `allowedModels` is omitted, the plugin falls back to `defaults.model`.
+- If `allowedVariants` is omitted, the plugin generates one agent per model and uses `defaults.variant` if provided.
+
 ## Usage
 
-Existing named subagents still use the normal `task` flow.
-
-Dynamic subagents are used when the orchestrator adds `subagent_description`, for example:
+Once generated, use the agents like any other OpenCode subagent:
 
 ```text
-Create a dynamic subagent named perf-auditor. Specialize it in runtime bottlenecks. Run it with openai/gpt-5.4 at high reasoning and have it inspect the request path implementation.
+Use @dsa-spark-high to scan a small part of the codebase.
+Use @dsa-gpt54-high to review the final shortlist.
 ```
 
-If the selected model or variant is not allowed, the task call fails immediately with a validation error.
-
-Model descriptions from config are surfaced back into task guidance so the orchestrator has better context when choosing among allowed models.
-
-## Notes
-
-- Tested OpenAI model strings: `openai/gpt-5.4`, `openai/gpt-5.3-codex-spark`
-- This plugin expects an OpenCode build that supports native dynamic task parameters (`subagent_description`, `model`, `variant`)
-- `$schema` is supported in `dynamicSubAgents.json`
-- The plugin has been tested locally with the installed `opencode` CLI using vague delegation prompts and explicit model selection
+This approach keeps model choice explicit and stable without depending on dynamic runtime task rewriting.
 
 ## Dev
 
