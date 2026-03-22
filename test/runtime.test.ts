@@ -65,7 +65,13 @@ void test("loadDynamicSubAgentsConfig loads a valid policy config", async () => 
       version: 1,
       defaults: {
         model: "openai/gpt-5.4-mini",
-        allowedModels: ["openai/gpt-5.4", "openai/gpt-5.4-mini"],
+        allowedModels: [
+          "openai/gpt-5.4",
+          {
+            id: "openai/gpt-5.4-mini",
+            description: "Lower-cost GPT-5.4 option.",
+          },
+        ],
       },
       runtime: {
         agentName: "dynamic-runtime",
@@ -85,6 +91,13 @@ void test("loadDynamicSubAgentsConfig loads a valid policy config", async () => 
     assert.equal(config.$schema, "https://example.com/dynamicSubAgents.schema.json")
     assert.equal(config.runtime?.agentName, "dynamic-runtime")
     assert.equal(config.defaults?.model, "openai/gpt-5.4-mini")
+    assert.deepEqual(config.defaults.allowedModels, [
+      "openai/gpt-5.4",
+      {
+        id: "openai/gpt-5.4-mini",
+        description: "Lower-cost GPT-5.4 option.",
+      },
+    ])
   } finally {
     if (original === undefined) {
       delete process.env["OPENCODE_DYNAMIC_SUBAGENTS_CONFIG"]
@@ -106,7 +119,31 @@ void test("resolvePolicy normalizes runtime defaults into a strict policy", () =
   assert.equal(policy.runtimeAgentName, "dynamic-subagent-runtime")
   assert.equal(policy.model, "openai/gpt-5.4-mini")
   assert.deepEqual(policy.allowedVariants, ["high"])
+  assert.deepEqual(policy.allowedModels, [])
   assert.equal(policy.hidden, true)
+})
+
+void test("resolvePolicy normalizes string and object allowed model entries", () => {
+  const policy = resolvePolicy({
+    version: 1,
+    defaults: {
+      allowedModels: [
+        "openai/gpt-5.4",
+        {
+          id: "openai/gpt-5.3-codex-spark",
+          description: "Fast code-focused model for cheaper subagents.",
+        },
+      ],
+    },
+  })
+
+  assert.deepEqual(policy.allowedModels, [
+    { id: "openai/gpt-5.4" },
+    {
+      id: "openai/gpt-5.3-codex-spark",
+      description: "Fast code-focused model for cheaper subagents.",
+    },
+  ])
 })
 
 void test("injectRuntimeSubagent adds a hidden backing agent", () => {
@@ -191,7 +228,13 @@ void test("buildTaskDescription explains named and dynamic subagents", () => {
     resolvePolicy({
       version: 1,
       defaults: {
-        allowedModels: ["openai/gpt-5.4", "openai/gpt-5.4-mini"],
+        allowedModels: [
+          "openai/gpt-5.4",
+          {
+            id: "openai/gpt-5.3-codex-spark",
+            description: "Fast code-focused model for cheaper subagents.",
+          },
+        ],
       },
     }),
   )
@@ -199,5 +242,6 @@ void test("buildTaskDescription explains named and dynamic subagents", () => {
   assert.match(description, /Named subagents:/)
   assert.match(description, /review/)
   assert.match(description, /Dynamic subagents are enabled/)
-  assert.match(description, /openai\/gpt-5.4-mini/)
+  assert.match(description, /openai\/gpt-5.4/)
+  assert.match(description, /openai\/gpt-5.3-codex-spark: Fast code-focused model for cheaper subagents\./)
 })

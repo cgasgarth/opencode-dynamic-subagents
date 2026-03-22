@@ -57,7 +57,16 @@ Default-style configuration:
     "model": "openai/gpt-5.4",
 
     // Restrict runtime model selection
-    "allowedModels": ["openai/gpt-5.4", "openai/gpt-5.3-codex-spark"],
+    "allowedModels": [
+      {
+        "id": "openai/gpt-5.4",
+        "description": "Best default choice for broad reasoning and higher quality subagent work."
+      },
+      {
+        "id": "openai/gpt-5.3-codex-spark",
+        "description": "Faster, lower-cost code-focused option for lightweight implementation tasks."
+      }
+    ],
 
     // Restrict reasoning / provider variant selection
     "allowedVariants": ["low", "medium", "high", "xhigh"]
@@ -98,6 +107,8 @@ Create a dynamic subagent named perf-auditor. Specialize it in runtime bottlenec
 ```
 
 If the selected model or variant is not allowed, the task call fails immediately with a validation error.
+
+Model descriptions are surfaced back into the task-system guidance so the orchestrating agent can use them when choosing between allowed models.
 
 ## Notes
 

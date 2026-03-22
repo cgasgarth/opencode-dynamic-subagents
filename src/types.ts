@@ -4,6 +4,11 @@ export type AgentPermission = {
   [key: string]: AgentPermission | PermissionAction
 }
 
+export type DynamicSubAgentModelOption = {
+  id: string
+  description?: string
+}
+
 export type DynamicSubAgentDefaults = {
   titlePrefix?: string
   model?: string
@@ -15,7 +20,7 @@ export type DynamicSubAgentDefaults = {
   steps?: number
   permission?: AgentPermission
   options?: Record<string, unknown>
-  allowedModels?: readonly string[]
+  allowedModels?: readonly (string | DynamicSubAgentModelOption)[]
   allowedVariants?: readonly string[]
 }
 
@@ -53,7 +58,7 @@ export type DynamicSubAgentPolicy = {
   steps?: number
   permission?: AgentPermission
   options: Record<string, unknown>
-  allowedModels: readonly string[]
+  allowedModels: readonly DynamicSubAgentModelOption[]
   allowedVariants: readonly string[]
   maxSubagentNameLength: number
   maxTaskDescriptionLength?: number
