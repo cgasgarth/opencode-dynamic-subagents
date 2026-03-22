@@ -229,12 +229,23 @@ export function validateDynamicSubagentRequest(
 }
 
 export function buildDynamicTaskPrompt(request: DynamicSubagentRequest): string {
+  const locationLines = [
+    ...(request.workingDirectory ? [`Current working directory: ${request.workingDirectory}`] : []),
+    ...(request.projectRoot && request.projectRoot !== request.workingDirectory
+      ? [`Project root: ${request.projectRoot}`]
+      : []),
+  ]
+
   return [
     `Dynamic subagent name: @${request.subagentType}`,
     `Dynamic subagent specialization: ${request.subagentDescription}`,
     `Task label: ${request.taskDescription}`,
     "",
+    ...locationLines,
+    ...(locationLines.length > 0 ? [""] : []),
     "Complete the following task using that specialization. Treat the specialization as authoritative for this run.",
+    "Resolve relative paths from the current working directory shown above.",
+    "Do not invent absolute filesystem paths. If the task gives a relative project path, use that exact relative path unless you verify a different path exists first.",
     "",
     request.prompt,
   ].join("\n")

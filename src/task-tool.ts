@@ -85,7 +85,7 @@ export function createTaskTool(pluginInput: PluginInput, state: TaskToolState): 
       const session = await getOrCreateTaskSession(pluginInput, context, args)
       const model = resolveModel(args, policy, parentAssistant, isDynamic)
       const variant = resolveVariant(args, policy, isDynamic)
-      const prompt = resolvePrompt(args, policy, state)
+      const prompt = resolvePrompt(args, policy, state, context)
 
       context.metadata({
         title: args.description,
@@ -226,7 +226,12 @@ function resolveHasTaskPermission(
   return state.taskPermissionAgents.has(args.subagent_type)
 }
 
-function resolvePrompt(args: TaskToolArgs, policy: DynamicSubAgentPolicy | undefined, state: TaskToolState): string {
+function resolvePrompt(
+  args: TaskToolArgs,
+  policy: DynamicSubAgentPolicy | undefined,
+  state: TaskToolState,
+  context: Pick<ToolContext, "directory" | "worktree">,
+): string {
   if (!args.subagent_description) return args.prompt
   if (!policy) throw new Error("Dynamic subagent policy is unavailable.")
 
@@ -235,6 +240,8 @@ function resolvePrompt(args: TaskToolArgs, policy: DynamicSubAgentPolicy | undef
     subagentDescription: args.subagent_description,
     taskDescription: args.description,
     prompt: args.prompt,
+    workingDirectory: context.directory,
+    projectRoot: context.worktree,
   }
 
   validateDynamicSubagentRequest(

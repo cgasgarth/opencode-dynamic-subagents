@@ -76,6 +76,8 @@ export type DynamicSubagentRequest = {
   subagentDescription: string
   taskDescription: string
   prompt: string
+  workingDirectory?: string
+  projectRoot?: string
 }
 
 export type ResolvedModel = {
