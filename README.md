@@ -8,7 +8,7 @@ Instead of forcing you to predefine every subagent up front, this plugin injects
 
 ## Installation
 
-Add to your OpenCode config:
+Add it to the same OpenCode config file you already use for other plugins:
 
 ```jsonc
 // opencode.json
@@ -17,7 +17,7 @@ Add to your OpenCode config:
 }
 ```
 
-Using `@latest` ensures you always get the newest version automatically when OpenCode starts.
+If you already have other plugins configured, append this package to that existing `plugin` array.
 
 Restart OpenCode after installing the plugin.
 
@@ -54,10 +54,10 @@ Default-style configuration:
   "version": 1,
   "defaults": {
     // Default model used for dynamic subagents when no explicit model is passed
-    "model": "openai/gpt-5.4-mini",
+    "model": "openai/gpt-5.4",
 
     // Restrict runtime model selection
-    "allowedModels": ["openai/gpt-5.4", "openai/gpt-5.4-mini"],
+    "allowedModels": ["openai/gpt-5.4", "openai/gpt-5.3-codex-spark"],
 
     // Restrict reasoning / provider variant selection
     "allowedVariants": ["low", "medium", "high", "xhigh"]
@@ -101,10 +101,10 @@ If the selected model or variant is not allowed, the task call fails immediately
 
 ## Notes
 
-- Recommended OpenAI model strings: `openai/gpt-5.4`, `openai/gpt-5.4-mini`
+- Tested OpenAI model strings: `openai/gpt-5.4`, `openai/gpt-5.3-codex-spark`
 - OpenCode still requires a concrete agent name for task execution, so this plugin uses a hidden runtime subagent internally
 - `$schema` is supported in `dynamicSubAgents.json`
-- The plugin has been smoke-tested locally with the installed `opencode` CLI using both allowed and denied model selections
+- The plugin has been tested locally with the installed `opencode` CLI using both vague delegation prompts and explicit model selection
 
 ## Dev
 
