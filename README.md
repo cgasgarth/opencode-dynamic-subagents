@@ -6,9 +6,16 @@ Adds policy-controlled dynamic subagents to OpenCode.
 
 Instead of forcing you to predefine every subagent up front, this plugin injects one hidden backing subagent and extends the `task` tool so the orchestrating agent can choose a runtime subagent name, specialization, model, and thinking variant for each task.
 
-## Installation
+## What You Get
 
-Add it to the same OpenCode config file you already use for other plugins:
+- Ad hoc subagents without predeclaring each one in OpenCode config
+- Per-task model and variant selection, validated against your allowlist
+- Hidden runtime agent injection that stays compatible with OpenCode's named-agent model
+- Model descriptions surfaced back to the orchestrator to improve model choice
+
+## Install
+
+Add the package to your existing OpenCode config:
 
 ```jsonc
 // opencode.json
@@ -17,9 +24,47 @@ Add it to the same OpenCode config file you already use for other plugins:
 }
 ```
 
-If you already have other plugins configured, append this package to that existing `plugin` array.
+If you already have other plugins configured, append this package to the same `plugin` array.
 
-Restart OpenCode after installing the plugin.
+Restart OpenCode after installing or updating the plugin.
+
+## Quick Start
+
+Create `~/.config/opencode/dynamicSubAgents.json`:
+
+```jsonc
+{
+  "$schema": "https://github.com/cgasgarth/opencode-dynamic-subagents/blob/main/dynamicSubAgents.schema.json",
+  "version": 1,
+  "defaults": {
+    "model": "openai/gpt-5.4",
+    "allowedModels": [
+      {
+        "id": "openai/gpt-5.4",
+        "description": "Best default choice for broad reasoning and higher quality subagent work."
+      },
+      {
+        "id": "openai/gpt-5.3-codex-spark",
+        "description": "Faster, lower-cost code-focused option for small code implementations or quickly searching for things."
+      }
+    ],
+    "allowedVariants": ["low", "medium", "high", "xhigh"]
+  }
+}
+```
+
+Restart OpenCode, then ask for delegation naturally:
+
+```text
+Use a subagent to inspect the request path and summarize likely bottlenecks.
+```
+
+When the orchestrator chooses the dynamic path, it provides:
+
+- `subagent_type`
+- `subagent_description`
+- optional `model`
+- optional `variant`
 
 ## How It Works
 
@@ -35,28 +80,19 @@ Existing named subagents still work normally. The dynamic path is only used when
 
 ## Configuration
 
-This plugin reads:
+The plugin reads:
 
 - `~/.config/opencode/dynamicSubAgents.json`
-- or `$OPENCODE_DYNAMIC_SUBAGENTS_CONFIG` if you want to override the path for testing
+- `$OPENCODE_DYNAMIC_SUBAGENTS_CONFIG` if you want to override the path for testing
 
-Restart OpenCode after changing the config.
-
-Important
-
-Defaults are applied automatically. Use this file when you want to restrict models, variants, runtime naming, or prompt size.
-
-Default-style configuration:
+Defaults are applied automatically. Add config when you want to restrict models, variants, runtime naming, or prompt size.
 
 ```jsonc
 {
   "$schema": "https://github.com/cgasgarth/opencode-dynamic-subagents/blob/main/dynamicSubAgents.schema.json",
   "version": 1,
   "defaults": {
-    // Default model used for dynamic subagents when no explicit model is passed
     "model": "openai/gpt-5.4",
-
-    // Restrict runtime model selection
     "allowedModels": [
       {
         "id": "openai/gpt-5.4",
@@ -67,21 +103,13 @@ Default-style configuration:
         "description": "Faster, lower-cost code-focused option for small code implementations or quickly searching for things."
       }
     ],
-
-    // Restrict reasoning / provider variant selection
     "allowedVariants": ["low", "medium", "high", "xhigh"]
   },
-
   "runtime": {
-    // Hidden backing subagent name injected into OpenCode
     "agentName": "dynamic-subagent-runtime",
-
-    // Optional description for the hidden runtime subagent
     "description": "Internal runtime for dynamic subagent execution."
   },
-
   "limits": {
-    // Guardrails for ad hoc subagent creation
     "maxSubagentNameLength": 64,
     "maxTaskDescriptionLength": 120,
     "maxPromptLength": 8000
@@ -91,16 +119,9 @@ Default-style configuration:
 
 ## Usage
 
-For an existing named subagent, use the `task` tool normally.
+Existing named subagents still use the normal `task` flow.
 
-For a dynamic subagent, the orchestrating agent should provide:
-
-- `subagent_type`
-- `subagent_description`
-- optional `model`
-- optional `variant`
-
-Example intent:
+Dynamic subagents are used when the orchestrator adds `subagent_description`, for example:
 
 ```text
 Create a dynamic subagent named perf-auditor. Specialize it in runtime bottlenecks. Run it with openai/gpt-5.4 at high reasoning and have it inspect the request path implementation.
@@ -108,14 +129,14 @@ Create a dynamic subagent named perf-auditor. Specialize it in runtime bottlenec
 
 If the selected model or variant is not allowed, the task call fails immediately with a validation error.
 
-Model descriptions are surfaced back into the task-system guidance so the orchestrating agent can use them when choosing between allowed models.
+Model descriptions from config are surfaced back into task guidance so the orchestrator has better context when choosing among allowed models.
 
 ## Notes
 
 - Tested OpenAI model strings: `openai/gpt-5.4`, `openai/gpt-5.3-codex-spark`
 - OpenCode still requires a concrete agent name for task execution, so this plugin uses a hidden runtime subagent internally
 - `$schema` is supported in `dynamicSubAgents.json`
-- The plugin has been tested locally with the installed `opencode` CLI using both vague delegation prompts and explicit model selection
+- The plugin has been tested locally with the installed `opencode` CLI using vague delegation prompts and explicit model selection
 
 ## Dev
 

@@ -14,6 +14,8 @@ import {
   resolveConfigPath,
   resolvePolicy,
   validateDynamicSubagentRequest,
+  validateModelSelection,
+  validateVariantSelection,
 } from "../src/config.js"
 
 void test("parseModel splits provider/model pairs", () => {
@@ -167,6 +169,31 @@ void test("injectRuntimeSubagent adds a hidden backing agent", () => {
   assert.equal(runtimeAgent.hidden, true)
 })
 
+void test("injectRuntimeSubagent preserves an existing runtime agent", () => {
+  const config = {
+    agent: {
+      "dynamic-runtime": {
+        mode: "subagent" as const,
+        description: "Existing runtime",
+      },
+    },
+  }
+
+  const collision = injectRuntimeSubagent(
+    config,
+    resolvePolicy({
+      version: 1,
+      runtime: {
+        agentName: "dynamic-runtime",
+        description: "New runtime",
+      },
+    }),
+  )
+
+  assert.equal(collision, "dynamic-runtime")
+  assert.equal(config.agent["dynamic-runtime"].description, "Existing runtime")
+})
+
 void test("collectConfiguredSubagents excludes primary agents", () => {
   const subagents = collectConfiguredSubagents({
     agent: {
@@ -209,6 +236,110 @@ void test("validateDynamicSubagentRequest rejects collisions with named subagent
   )
 })
 
+void test("validateDynamicSubagentRequest rejects invalid subagent names", () => {
+  const policy = resolvePolicy({
+    version: 1,
+  })
+
+  assert.throws(
+    () => {
+      validateDynamicSubagentRequest(
+        policy,
+        {
+          subagentType: "review helper",
+          subagentDescription: "Code reviewer",
+          taskDescription: "Review diff",
+          prompt: "Review the current diff.",
+        },
+        [],
+      )
+    },
+    /is invalid/,
+  )
+})
+
+void test("validateDynamicSubagentRequest enforces configured task and prompt limits", () => {
+  const policy = resolvePolicy({
+    version: 1,
+    limits: {
+      maxTaskDescriptionLength: 10,
+      maxPromptLength: 12,
+    },
+  })
+
+  assert.throws(
+    () => {
+      validateDynamicSubagentRequest(
+        policy,
+        {
+          subagentType: "review",
+          subagentDescription: "Code reviewer",
+          taskDescription: "Review current diff",
+          prompt: "Short prompt",
+        },
+        [],
+      )
+    },
+    /Task description exceeds the configured limit/,
+  )
+
+  assert.throws(
+    () => {
+      validateDynamicSubagentRequest(
+        policy,
+        {
+          subagentType: "review",
+          subagentDescription: "Code reviewer",
+          taskDescription: "Review",
+          prompt: "Prompt that is far too long",
+        },
+        [],
+      )
+    },
+    /Task prompt exceeds the configured limit/,
+  )
+})
+
+void test("validateModelSelection rejects disallowed models", () => {
+  const policy = resolvePolicy({
+    version: 1,
+    defaults: {
+      allowedModels: ["openai/gpt-5.4"],
+    },
+  })
+
+  assert.doesNotThrow(() => {
+    validateModelSelection(policy, "openai/gpt-5.4")
+  })
+
+  assert.throws(
+    () => {
+      validateModelSelection(policy, "openai/gpt-5.3-codex-spark")
+    },
+    /is not allowed by dynamicSubAgents\.json/,
+  )
+})
+
+void test("validateVariantSelection rejects disallowed variants", () => {
+  const policy = resolvePolicy({
+    version: 1,
+    defaults: {
+      allowedVariants: ["high"],
+    },
+  })
+
+  assert.doesNotThrow(() => {
+    validateVariantSelection(policy, "high")
+  })
+
+  assert.throws(
+    () => {
+      validateVariantSelection(policy, "low")
+    },
+    /is not allowed by dynamicSubAgents\.json/,
+  )
+})
+
 void test("buildDynamicTaskPrompt embeds runtime specialization", () => {
   const prompt = buildDynamicTaskPrompt({
     subagentType: "perf-auditor",
@@ -244,4 +375,11 @@ void test("buildTaskDescription explains named and dynamic subagents", () => {
   assert.match(description, /Dynamic subagents are enabled/)
   assert.match(description, /openai\/gpt-5.4/)
   assert.match(description, /openai\/gpt-5.3-codex-spark: Fast code-focused model for cheaper subagents\./)
+})
+
+void test("buildTaskDescription explains when dynamic subagents are disabled", () => {
+  const description = buildTaskDescription([], undefined)
+
+  assert.match(description, /No named subagents were discovered from config\./)
+  assert.match(description, /Dynamic subagents are disabled until dynamicSubAgents\.json is present\./)
 })
