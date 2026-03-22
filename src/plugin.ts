@@ -1,56 +1,66 @@
 import type { Plugin } from "@opencode-ai/plugin"
 
-import { injectDynamicAgents, listDynamicAgents, loadDynamicSubAgentsConfig } from "./config.js"
-import { createTaskDescription, createTaskTool, formatTaskSelection } from "./task-tool.js"
+import { buildTaskDescription, collectConfiguredSubagents, injectRuntimeSubagent, loadDynamicSubAgentsConfig, resolvePolicy } from "./config.js"
+import { createTaskTool } from "./task-tool.js"
+import type { ConfiguredSubagentSummary } from "./types.js"
 
-export const DynamicSubAgentsPlugin: Plugin = async (input) => {
-  const taskTool = createTaskTool(input)
+type PluginConfigShape = Parameters<typeof collectConfiguredSubagents>[0]
+type SystemTransformOutput = {
+  system: string[]
+}
 
-  return {
-    async config(config) {
+type RuntimeState = {
+  configuredSubagents: readonly ConfiguredSubagentSummary[]
+  runtimeAgentName?: string
+}
+
+export const DynamicSubAgentsPlugin: Plugin = (input) => {
+  const state: RuntimeState = {
+    configuredSubagents: [],
+  }
+
+  const taskTool = createTaskTool(input, state)
+
+  return Promise.resolve({
+    async config(config: PluginConfigShape) {
       const dynamicConfig = await loadDynamicSubAgentsConfig()
+
+      state.configuredSubagents = collectConfiguredSubagents(config)
+      delete state.runtimeAgentName
+
       if (!dynamicConfig) return
 
-      const collisions = injectDynamicAgents(config, dynamicConfig)
-      if (collisions.length === 0) return
+      const policy = resolvePolicy(dynamicConfig)
+      const collision = injectRuntimeSubagent(config, policy)
 
-      await input.client.app.log({
-        body: {
-          service: "opencode-dynamic-subagents",
-          level: "warn",
-          message: "Skipped dynamic subagents because matching agent names already exist",
-          extra: {
-            collisions,
+      if (collision) {
+        await input.client.app.log({
+          body: {
+            service: "opencode-dynamic-subagents",
+            level: "warn",
+            message: "Skipped dynamic runtime agent injection because the configured runtime agent name already exists",
+            extra: {
+              runtimeAgentName: collision,
+            },
           },
-        },
-      })
+        })
+
+        return
+      }
+
+      state.runtimeAgentName = policy.runtimeAgentName
+      state.configuredSubagents = collectConfiguredSubagents(config, policy.runtimeAgentName)
     },
     tool: {
-      task: {
-        ...taskTool,
-        description: await createTaskDescription(),
-      },
+      task: taskTool,
     },
-    "experimental.chat.system.transform": async (_hookInput, output) => {
+    "experimental.chat.system.transform": async (_hookInput: unknown, output: SystemTransformOutput) => {
       const dynamicConfig = await loadDynamicSubAgentsConfig()
-      if (!dynamicConfig) return
+      const policy = dynamicConfig ? resolvePolicy(dynamicConfig) : undefined
 
-      const dynamicAgents = listDynamicAgents(dynamicConfig).map((agent) => agent.name)
-      if (dynamicAgents.length === 0) return
-
-      output.system.push(
-        [
-          "Dynamic subagents are available through the task tool.",
-          "When you choose one, you may pass model and variant if the target subagent allows them.",
-          `Configured dynamic subagents: ${dynamicAgents.map((agent) => `@${agent}`).join(", ")}.`,
-          `When reasoning is relevant, prefer an explicit model/variant pair such as ${formatTaskSelection(
-            { providerID: "provider", modelID: "model" },
-            "high",
-          )}.`,
-        ].join(" "),
-      )
+      output.system.push(buildTaskDescription(state.configuredSubagents, policy))
     },
-  }
+  })
 }
 
 export default DynamicSubAgentsPlugin

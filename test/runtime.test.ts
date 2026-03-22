@@ -5,19 +5,21 @@ import * as path from "node:path"
 import { test } from "node:test"
 
 import {
+  buildDynamicTaskPrompt,
   buildTaskDescription,
-  findDynamicAgent,
-  injectDynamicAgents,
-  listDynamicAgents,
+  collectConfiguredSubagents,
+  injectRuntimeSubagent,
   loadDynamicSubAgentsConfig,
   parseModel,
   resolveConfigPath,
+  resolvePolicy,
+  validateDynamicSubagentRequest,
 } from "../src/config.js"
 
 void test("parseModel splits provider/model pairs", () => {
-  assert.deepEqual(parseModel("anthropic/claude-sonnet-4-5-20250929"), {
-    providerID: "anthropic",
-    modelID: "claude-sonnet-4-5-20250929",
+  assert.deepEqual(parseModel("openai/gpt-5.4-mini"), {
+    providerID: "openai",
+    modelID: "gpt-5.4-mini",
   })
 })
 
@@ -52,7 +54,7 @@ void test("loadDynamicSubAgentsConfig returns null when the file is missing", as
   }
 })
 
-void test("loadDynamicSubAgentsConfig loads a valid user config", async () => {
+void test("loadDynamicSubAgentsConfig loads a valid policy config", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "opencode-dynamic-subagents-"))
   const configPath = path.join(tempDir, "dynamicSubAgents.json")
 
@@ -61,14 +63,14 @@ void test("loadDynamicSubAgentsConfig loads a valid user config", async () => {
     JSON.stringify({
       version: 1,
       defaults: {
-        model: "openai/gpt-5.1-codex",
-        allowedVariants: ["high"],
+        model: "openai/gpt-5.4-mini",
+        allowedModels: ["openai/gpt-5.4", "openai/gpt-5.4-mini"],
       },
-      agents: {
-        review: {
-          description: "Code review subagent",
-          prompt: "Review the supplied changes.",
-        },
+      runtime: {
+        agentName: "dynamic-runtime",
+      },
+      limits: {
+        maxPromptLength: 5000,
       },
     }),
   )
@@ -79,9 +81,8 @@ void test("loadDynamicSubAgentsConfig loads a valid user config", async () => {
   try {
     const config = await loadDynamicSubAgentsConfig()
     assert.ok(config)
-    const reviewAgent = config.agents["review"]
-    assert.ok(reviewAgent)
-    assert.equal(reviewAgent.description, "Code review subagent")
+    assert.equal(config.runtime?.agentName, "dynamic-runtime")
+    assert.equal(config.defaults?.model, "openai/gpt-5.4-mini")
   } finally {
     if (original === undefined) {
       delete process.env["OPENCODE_DYNAMIC_SUBAGENTS_CONFIG"]
@@ -91,79 +92,110 @@ void test("loadDynamicSubAgentsConfig loads a valid user config", async () => {
   }
 })
 
-void test("listDynamicAgents normalizes defaults into concrete runtime agents", () => {
-  const agents = listDynamicAgents({
+void test("resolvePolicy normalizes runtime defaults into a strict policy", () => {
+  const policy = resolvePolicy({
     version: 1,
     defaults: {
-      model: "openai/gpt-5.1-codex",
+      model: "openai/gpt-5.4-mini",
       allowedVariants: ["high"],
     },
-    agents: {
-      explore: {
-        description: "Explore the codebase",
-        prompt: "Search files and answer questions.",
+  })
+
+  assert.equal(policy.runtimeAgentName, "dynamic-subagent-runtime")
+  assert.equal(policy.model, "openai/gpt-5.4-mini")
+  assert.deepEqual(policy.allowedVariants, ["high"])
+  assert.equal(policy.hidden, true)
+})
+
+void test("injectRuntimeSubagent adds a hidden backing agent", () => {
+  const config = {
+    agent: {} as Record<string, { mode?: "primary" | "subagent" | "all"; hidden?: boolean }>,
+  }
+  const collision = injectRuntimeSubagent(
+    config,
+    resolvePolicy({
+      version: 1,
+      runtime: {
+        agentName: "dynamic-runtime",
+      },
+    }),
+  )
+
+  assert.equal(collision, null)
+  const runtimeAgent = config.agent["dynamic-runtime"]
+  assert.ok(runtimeAgent)
+  assert.equal(runtimeAgent.mode, "subagent")
+  assert.equal(runtimeAgent.hidden, true)
+})
+
+void test("collectConfiguredSubagents excludes primary agents", () => {
+  const subagents = collectConfiguredSubagents({
+    agent: {
+      build: {
+        mode: "primary",
+        description: "Build things",
+      },
+      review: {
+        mode: "subagent",
+        description: "Review changes",
       },
     },
   })
 
-  const firstAgent = agents[0]
-  assert.ok(firstAgent)
-  assert.equal(firstAgent.model, "openai/gpt-5.1-codex")
-  assert.deepEqual(firstAgent.allowedVariants, ["high"])
+  assert.deepEqual(subagents, [{ name: "review", description: "Review changes", hidden: false }])
 })
 
-void test("injectDynamicAgents adds dynamic agents to the OpenCode config", () => {
-  const collisions = injectDynamicAgents(
-    { agent: {} },
-    {
-      version: 1,
-      agents: {
-        review: {
-          description: "Code review subagent",
-          prompt: "Review the supplied changes.",
-        },
-      },
+void test("validateDynamicSubagentRequest rejects collisions with named subagents", () => {
+  const policy = resolvePolicy({
+    version: 1,
+    limits: {
+      maxSubagentNameLength: 32,
     },
-  )
+  })
 
-  assert.deepEqual(collisions, [])
+  assert.throws(
+    () => {
+      validateDynamicSubagentRequest(
+        policy,
+        {
+          subagentType: "review",
+          subagentDescription: "Code reviewer",
+          taskDescription: "Review diff",
+          prompt: "Review the current diff.",
+        },
+        ["review"],
+      )
+    },
+    /conflicts with an existing named subagent/,
+  )
 })
 
-void test("findDynamicAgent returns normalized agent definitions", () => {
-  const agent = findDynamicAgent(
-    {
+void test("buildDynamicTaskPrompt embeds runtime specialization", () => {
+  const prompt = buildDynamicTaskPrompt({
+    subagentType: "perf-auditor",
+    subagentDescription: "Investigate runtime bottlenecks",
+    taskDescription: "Audit performance",
+    prompt: "Profile the request path and summarize hotspots.",
+  })
+
+  assert.match(prompt, /perf-auditor/)
+  assert.match(prompt, /Investigate runtime bottlenecks/)
+  assert.match(prompt, /Profile the request path/)
+})
+
+void test("buildTaskDescription explains named and dynamic subagents", () => {
+  const description = buildTaskDescription(
+    [{ name: "review", description: "Review changes", hidden: false }],
+    resolvePolicy({
       version: 1,
       defaults: {
-        model: "openai/gpt-5.1-codex",
+        allowedModels: ["openai/gpt-5.4", "openai/gpt-5.4-mini"],
       },
-      agents: {
-        explore: {
-          description: "Explore the codebase",
-          prompt: "Search files and answer questions.",
-        },
-      },
-    },
-    "explore",
+    }),
   )
 
-  assert.ok(agent)
-  assert.equal(agent.model, "openai/gpt-5.1-codex")
-})
-
-void test("buildTaskDescription lists configured agents", () => {
-  const description = buildTaskDescription([
-    {
-      name: "explore",
-      description: "Explore the codebase",
-      prompt: "Search files and answer questions.",
-      model: "openai/gpt-5.1-codex",
-      variant: "high",
-      options: {},
-      allowedModels: [],
-      allowedVariants: [],
-    },
-  ])
-
-  assert.match(description, /explore/)
-  assert.match(description, /Explore the codebase/)
+  assert.match(description, /Named subagents:/)
+  assert.match(description, /review/)
+  assert.match(description, /Dynamic subagents are enabled/)
+  assert.match(description, /openai\/gpt-5.4-mini/)
 })

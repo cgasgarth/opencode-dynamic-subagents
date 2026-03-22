@@ -4,7 +4,6 @@
   "title": "OpenCode Dynamic Subagents",
   "type": "object",
   "additionalProperties": false,
-  "required": ["agents"],
   "properties": {
     "version": {
       "type": "integer",
@@ -64,66 +63,41 @@
         }
       }
     },
-    "agents": {
+    "runtime": {
       "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["description"],
-        "properties": {
-          "description": {
-            "type": "string",
-            "minLength": 1
-          },
-          "prompt": {
-            "type": "string",
-            "minLength": 1
-          },
-          "model": {
-            "type": "string",
-            "minLength": 1
-          },
-          "variant": {
-            "type": "string",
-            "minLength": 1
-          },
-          "temperature": {
-            "type": "number"
-          },
-          "top_p": {
-            "type": "number"
-          },
-          "color": {
-            "type": "string"
-          },
-          "hidden": {
-            "type": "boolean"
-          },
-          "steps": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "permission": {
-            "type": "object"
-          },
-          "options": {
-            "type": "object"
-          },
-          "allowedModels": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "allowedVariants": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
+      "additionalProperties": false,
+      "properties": {
+        "agentName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxSubagentNameLength": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxTaskDescriptionLength": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxPromptLength": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     }
   }
+}

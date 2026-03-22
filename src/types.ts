@@ -19,43 +19,57 @@ export type DynamicSubAgentDefaults = {
   allowedVariants?: readonly string[]
 }
 
-export type DynamicSubAgentInput = {
-  description: string
+export type DynamicSubAgentRuntime = {
+  agentName?: string
+  description?: string
   prompt?: string
-  model?: string
-  variant?: string
-  temperature?: number
-  top_p?: number
-  color?: string
-  hidden?: boolean
-  steps?: number
-  permission?: AgentPermission
-  options?: Record<string, unknown>
-  allowedModels?: readonly string[]
-  allowedVariants?: readonly string[]
+}
+
+export type DynamicSubAgentLimits = {
+  maxSubagentNameLength?: number
+  maxTaskDescriptionLength?: number
+  maxPromptLength?: number
 }
 
 export type DynamicSubAgentsConfig = {
   version: 1
   defaults?: DynamicSubAgentDefaults
-  agents: Record<string, DynamicSubAgentInput>
+  runtime?: DynamicSubAgentRuntime
+  limits?: DynamicSubAgentLimits
 }
 
-export type DynamicSubAgent = {
-  name: string
-  description: string
-  prompt?: string
+export type DynamicSubAgentPolicy = {
+  runtimeAgentName: string
+  runtimeDescription: string
+  runtimePrompt?: string
+  titlePrefix?: string
   model?: string
   variant?: string
   temperature?: number
   top_p?: number
   color?: string
-  hidden?: boolean
+  hidden: boolean
   steps?: number
   permission?: AgentPermission
   options: Record<string, unknown>
   allowedModels: readonly string[]
   allowedVariants: readonly string[]
+  maxSubagentNameLength: number
+  maxTaskDescriptionLength?: number
+  maxPromptLength?: number
+}
+
+export type ConfiguredSubagentSummary = {
+  name: string
+  description?: string
+  hidden: boolean
+}
+
+export type DynamicSubagentRequest = {
+  subagentType: string
+  subagentDescription: string
+  taskDescription: string
+  prompt: string
 }
 
 export type ResolvedModel = {

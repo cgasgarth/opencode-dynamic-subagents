@@ -3,34 +3,52 @@ import { tool } from "@opencode-ai/plugin"
 import type { AssistantMessage, Session, SessionMessageResponse } from "@opencode-ai/sdk"
 
 import {
-  buildTaskDescription,
-  findDynamicAgent,
+  buildDynamicTaskPrompt,
   formatModel,
-  listDynamicAgents,
   loadDynamicSubAgentsConfig,
   parseModel,
+  resolvePolicy,
+  validateDynamicSubagentRequest,
   validateModelSelection,
   validateVariantSelection,
 } from "./config.js"
-import type { DynamicSubAgent, ResolvedModel } from "./types.js"
+import type { ConfiguredSubagentSummary, DynamicSubAgentPolicy, DynamicSubagentRequest, ResolvedModel } from "./types.js"
+
+export const TASK_TOOL_DESCRIPTION = [
+  "Launch a specialized subagent task.",
+  "Use subagent_type for a named existing subagent.",
+  "To create an ad hoc dynamic subagent, also provide subagent_description.",
+  'Optional model overrides use "provider/model" format.',
+].join(" ")
 
 type TaskToolArgs = {
   description: string
   prompt: string
   subagent_type: string
+  subagent_description?: string | undefined
   task_id?: string | undefined
   command?: string | undefined
   model?: string | undefined
   variant?: string | undefined
 }
 
-export function createTaskTool(pluginInput: PluginInput): ToolDefinition {
+export type TaskToolState = {
+  configuredSubagents: readonly ConfiguredSubagentSummary[]
+  runtimeAgentName?: string
+}
+
+export function createTaskTool(pluginInput: PluginInput, state: TaskToolState): ToolDefinition {
   return tool({
-    description: "Launch a specialized subagent task. Supports optional model and variant selection.",
+    description: TASK_TOOL_DESCRIPTION,
     args: {
       description: tool.schema.string().min(1).describe("A short (3-5 words) description of the task"),
       prompt: tool.schema.string().min(1).describe("The task for the agent to perform"),
-      subagent_type: tool.schema.string().min(1).describe("The subagent type to use"),
+      subagent_type: tool.schema.string().min(1).describe("Existing subagent name or a new dynamic subagent name"),
+      subagent_description: tool.schema
+        .string()
+        .min(1)
+        .optional()
+        .describe("Define the specialization for an ad hoc dynamic subagent"),
       task_id: tool.schema.string().min(1).optional().describe("Resume an existing subagent session if provided"),
       command: tool.schema.string().min(1).optional().describe("The command that triggered this task"),
       model: tool.schema
@@ -42,7 +60,8 @@ export function createTaskTool(pluginInput: PluginInput): ToolDefinition {
     },
     async execute(args, context) {
       const config = await loadDynamicSubAgentsConfig()
-      const dynamicAgent = config ? findDynamicAgent(config, args.subagent_type) : undefined
+      const policy = config ? resolvePolicy(config) : undefined
+      const isDynamic = args.subagent_description !== undefined
 
       await context.ask({
         permission: "task",
@@ -54,29 +73,44 @@ export function createTaskTool(pluginInput: PluginInput): ToolDefinition {
         },
       })
 
+      if (isDynamic && !policy) {
+        throw new Error("Dynamic subagents require ~/.config/opencode/dynamicSubAgents.json.")
+      }
+
       const parentAssistant = await loadParentAssistantMessage(pluginInput, context)
-      const model = resolveModel(dynamicAgent, args.model, parentAssistant)
-      const variant = resolveVariant(dynamicAgent, args.variant)
       const session = await getOrCreateTaskSession(pluginInput, context, args)
+      const model = resolveModel(args, policy, parentAssistant, isDynamic)
+      const variant = resolveVariant(args, policy, isDynamic)
+      const targetAgent = resolveTargetAgent(args, state, policy, isDynamic)
+      const prompt = resolvePrompt(args, policy, state)
 
       context.metadata({
         title: args.description,
         metadata: {
           sessionId: session.id,
-          model,
+          model: model ?? "agent-default",
           variant,
+          targetAgent,
         },
       })
+
+      const body: {
+        agent: string
+        model?: ResolvedModel
+        variant?: string
+        parts: { type: "text"; text: string }[]
+      } = {
+        agent: targetAgent,
+        parts: [{ type: "text", text: prompt }],
+      }
+
+      if (model) body.model = model
+      if (variant) body.variant = variant
 
       const result = await pluginInput.client.session.prompt({
         path: { id: session.id },
         query: { directory: context.directory },
-        body: {
-          agent: args.subagent_type,
-          model,
-          ...(variant ? { variant } : {}),
-          parts: [{ type: "text", text: args.prompt }],
-        },
+        body,
       })
 
       if (!result.data) {
@@ -92,11 +126,6 @@ export function createTaskTool(pluginInput: PluginInput): ToolDefinition {
       ].join("\n")
     },
   })
-}
-
-export async function createTaskDescription(): Promise<string> {
-  const config = await loadDynamicSubAgentsConfig()
-  return buildTaskDescription(config ? listDynamicAgents(config) : [])
 }
 
 export function formatTaskSelection(model: ResolvedModel, variant: string | undefined): string {
@@ -120,45 +149,83 @@ async function loadParentAssistantMessage(
 }
 
 function resolveModel(
-  dynamicAgent: DynamicSubAgent | undefined,
-  requestedModel: string | undefined,
+  args: TaskToolArgs,
+  policy: DynamicSubAgentPolicy | undefined,
   parentAssistant: AssistantMessage | undefined,
-): ResolvedModel {
-  if (requestedModel) {
-    if (dynamicAgent) validateModelSelection(dynamicAgent, requestedModel)
-    return parseModel(requestedModel)
+  isDynamic: boolean,
+): ResolvedModel | undefined {
+  if (args.model) {
+    if (policy) validateModelSelection(policy, args.model)
+    return parseModel(args.model)
   }
 
-  if (dynamicAgent?.model) {
-    validateModelSelection(dynamicAgent, dynamicAgent.model)
-    return parseModel(dynamicAgent.model)
+  if (isDynamic && policy?.model) {
+    validateModelSelection(policy, policy.model)
+    return parseModel(policy.model)
   }
 
-  if (!parentAssistant) {
-    throw new Error("Could not resolve a model for the subagent task.")
-  }
+  if (!isDynamic) return undefined
+  if (!parentAssistant) throw new Error("Could not resolve a model for the dynamic subagent task.")
 
-  return {
+  const inherited = {
     providerID: parentAssistant.providerID,
     modelID: parentAssistant.modelID,
   }
+
+  if (policy) validateModelSelection(policy, formatModel(inherited))
+  return inherited
 }
 
 function resolveVariant(
-  dynamicAgent: DynamicSubAgent | undefined,
-  requestedVariant: string | undefined,
+  args: TaskToolArgs,
+  policy: DynamicSubAgentPolicy | undefined,
+  isDynamic: boolean,
 ): string | undefined {
-  if (requestedVariant) {
-    if (dynamicAgent) validateVariantSelection(dynamicAgent, requestedVariant)
-    return requestedVariant
+  if (args.variant) {
+    if (policy) validateVariantSelection(policy, args.variant)
+    return args.variant
   }
 
-  if (dynamicAgent?.variant) {
-    validateVariantSelection(dynamicAgent, dynamicAgent.variant)
-    return dynamicAgent.variant
+  if (isDynamic && policy?.variant) {
+    validateVariantSelection(policy, policy.variant)
+    return policy.variant
   }
 
   return undefined
+}
+
+function resolveTargetAgent(
+  args: TaskToolArgs,
+  state: TaskToolState,
+  policy: DynamicSubAgentPolicy | undefined,
+  isDynamic: boolean,
+): string {
+  if (!isDynamic) return args.subagent_type
+  if (!policy) throw new Error("Dynamic subagent policy is unavailable.")
+  if (state.runtimeAgentName && state.runtimeAgentName !== policy.runtimeAgentName) {
+    throw new Error("Dynamic runtime state is inconsistent with the loaded config.")
+  }
+  return policy.runtimeAgentName
+}
+
+function resolvePrompt(args: TaskToolArgs, policy: DynamicSubAgentPolicy | undefined, state: TaskToolState): string {
+  if (!args.subagent_description) return args.prompt
+  if (!policy) throw new Error("Dynamic subagent policy is unavailable.")
+
+  const request: DynamicSubagentRequest = {
+    subagentType: args.subagent_type,
+    subagentDescription: args.subagent_description,
+    taskDescription: args.description,
+    prompt: args.prompt,
+  }
+
+  validateDynamicSubagentRequest(
+    policy,
+    request,
+    state.configuredSubagents.map((subagent) => subagent.name),
+  )
+
+  return buildDynamicTaskPrompt(request)
 }
 
 async function getOrCreateTaskSession(

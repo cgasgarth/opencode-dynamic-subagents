@@ -1,10 +1,13 @@
 export { DynamicSubAgentsPlugin, DynamicSubAgentsPlugin as default } from "./plugin.js"
 export type {
   AgentPermission,
-  DynamicSubAgent,
   DynamicSubAgentDefaults,
-  DynamicSubAgentInput,
+  DynamicSubAgentLimits,
+  DynamicSubAgentPolicy,
+  DynamicSubAgentRuntime,
   DynamicSubAgentsConfig,
+  DynamicSubagentRequest,
+  ConfiguredSubagentSummary,
   ResolvedModel,
 } from "./types.js"
 
