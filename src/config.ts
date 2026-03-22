@@ -6,6 +6,8 @@ import { z } from "zod"
 
 import type {
   ConfiguredSubagentSummary,
+  DynamicSubAgentDefaults,
+  DynamicSubAgentModelOption,
   DynamicSubAgentPolicy,
   DynamicSubagentRequest,
   DynamicSubAgentsConfig,
@@ -22,6 +24,15 @@ const DEFAULT_MAX_SUBAGENT_NAME_LENGTH = 64
 const SUBAGENT_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/
 
 const permissionSchema = z.record(z.string(), z.unknown()).optional()
+const allowedModelSchema = z.union([
+  z.string().min(1),
+  z
+    .object({
+      id: z.string().min(1),
+      description: z.string().min(1).optional(),
+    })
+    .strict(),
+])
 
 const defaultsSchema = z
   .object({
@@ -35,7 +46,7 @@ const defaultsSchema = z
     steps: z.number().int().positive().optional(),
     permission: permissionSchema,
     options: z.record(z.string(), z.unknown()).optional(),
-    allowedModels: z.array(z.string().min(1)).readonly().optional(),
+    allowedModels: z.array(allowedModelSchema).readonly().optional(),
     allowedVariants: z.array(z.string().min(1)).readonly().optional(),
   })
   .strict()
@@ -107,7 +118,7 @@ export function resolvePolicy(config: DynamicSubAgentsConfig): DynamicSubAgentPo
     runtimeDescription: config.runtime?.description ?? DEFAULT_RUNTIME_DESCRIPTION,
     hidden: config.defaults?.hidden ?? true,
     options: config.defaults?.options ?? {},
-    allowedModels: config.defaults?.allowedModels ?? [],
+    allowedModels: normalizeAllowedModels(config.defaults?.allowedModels),
     allowedVariants: config.defaults?.allowedVariants ?? [],
     maxSubagentNameLength: config.limits?.maxSubagentNameLength ?? DEFAULT_MAX_SUBAGENT_NAME_LENGTH,
     ...(config.runtime?.prompt ?? DEFAULT_RUNTIME_PROMPT ? { runtimePrompt: config.runtime?.prompt ?? DEFAULT_RUNTIME_PROMPT } : {}),
@@ -174,7 +185,7 @@ export function formatModel(model: ResolvedModel): string {
 }
 
 export function validateModelSelection(policy: DynamicSubAgentPolicy, model: string): void {
-  if (policy.allowedModels.length > 0 && !policy.allowedModels.includes(model)) {
+  if (policy.allowedModels.length > 0 && !policy.allowedModels.some((item) => item.id === model)) {
     throw new Error(`Model "${model}" is not allowed by dynamicSubAgents.json.`)
   }
 }
@@ -242,7 +253,14 @@ export function buildTaskDescription(
     ? [
         "Dynamic subagents are enabled.",
         "To create one, choose a fresh subagent_type, provide subagent_description, and optionally set model and variant.",
-        policy.allowedModels.length > 0 ? `Allowed models: ${policy.allowedModels.join(", ")}.` : undefined,
+        ...(policy.allowedModels.length > 0
+          ? [
+              "Allowed models:",
+              ...policy.allowedModels.map((model) =>
+                model.description ? `- ${model.id}: ${model.description}` : `- ${model.id}`,
+              ),
+            ]
+          : []),
         policy.allowedVariants.length > 0 ? `Allowed variants: ${policy.allowedVariants.join(", ")}.` : undefined,
       ].filter(Boolean)
     : ["Dynamic subagents are disabled until dynamicSubAgents.json is present."]
@@ -269,4 +287,8 @@ function toConfiguredSubagent(name: string, agent: OpenCodeAgentConfig | undefin
 
 function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
+}
+
+function normalizeAllowedModels(allowedModels: DynamicSubAgentDefaults["allowedModels"] = []): DynamicSubAgentModelOption[] {
+  return allowedModels.map((entry) => (typeof entry === "string" ? { id: entry } : entry))
 }
