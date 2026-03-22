@@ -378,11 +378,15 @@ void test("buildDynamicTaskPrompt embeds runtime specialization", () => {
     subagentDescription: "Investigate runtime bottlenecks",
     taskDescription: "Audit performance",
     prompt: "Profile the request path and summarize hotspots.",
+    workingDirectory: "/Users/cgas/Documents/Projects/Atelier",
+    projectRoot: "/Users/cgas/Documents/Projects/Atelier",
   })
 
   assert.match(prompt, /perf-auditor/)
   assert.match(prompt, /Investigate runtime bottlenecks/)
   assert.match(prompt, /Profile the request path/)
+  assert.match(prompt, /Current working directory: \/Users\/cgas\/Documents\/Projects\/Atelier/)
+  assert.match(prompt, /Do not invent absolute filesystem paths\./)
 })
 
 void test("buildTaskDescription explains named and dynamic subagents", () => {
