@@ -4,9 +4,9 @@ export type {
   DynamicSubAgentDefaults,
   DynamicSubAgentLimits,
   DynamicSubAgentPolicy,
-  DynamicSubAgentRuntime,
   DynamicSubAgentsConfig,
-  DynamicSubagentRequest,
   ConfiguredSubagentSummary,
+  GeneratedSubagentConfig,
+  GeneratedSubagentDefinition,
   ResolvedModel,
 } from "./types.js"

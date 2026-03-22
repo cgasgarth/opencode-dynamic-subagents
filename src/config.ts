@@ -9,19 +9,16 @@ import type {
   DynamicSubAgentDefaults,
   DynamicSubAgentModelOption,
   DynamicSubAgentPolicy,
-  DynamicSubagentRequest,
   DynamicSubAgentsConfig,
+  GeneratedSubagentConfig,
+  GeneratedSubagentDefinition,
   ResolvedModel,
 } from "./types.js"
 
 const COLOR_OPTIONS = ["primary", "secondary", "accent", "success", "warning", "error", "info"] as const
 const CONFIG_ENV_NAME = "OPENCODE_DYNAMIC_SUBAGENTS_CONFIG"
-const DEFAULT_RUNTIME_AGENT_NAME = "dynamic-subagent-runtime"
-const DEFAULT_RUNTIME_DESCRIPTION = "Internal runtime for dynamic subagent execution."
-const DEFAULT_RUNTIME_PROMPT =
-  "You are an internal dynamic subagent runtime. Follow the dynamic role specification embedded in the user message for this run."
 const DEFAULT_MAX_SUBAGENT_NAME_LENGTH = 64
-const SUBAGENT_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/
+const GENERATED_NAME_PREFIX = "dsa"
 
 const permissionSchema = z.record(z.string(), z.unknown()).optional()
 const allowedModelSchema = z.union([
@@ -29,6 +26,7 @@ const allowedModelSchema = z.union([
   z
     .object({
       id: z.string().min(1),
+      name: z.string().min(1).optional(),
       description: z.string().min(1).optional(),
     })
     .strict(),
@@ -36,9 +34,9 @@ const allowedModelSchema = z.union([
 
 const defaultsSchema = z
   .object({
-    titlePrefix: z.string().min(1).optional(),
     model: z.string().min(1).optional(),
     variant: z.string().min(1).optional(),
+    prompt: z.string().min(1).optional(),
     temperature: z.number().optional(),
     top_p: z.number().optional(),
     color: z.union([z.string().regex(/^#[0-9a-fA-F]{6}$/), z.enum(COLOR_OPTIONS)]).optional(),
@@ -51,19 +49,9 @@ const defaultsSchema = z
   })
   .strict()
 
-const runtimeSchema = z
-  .object({
-    agentName: z.string().min(1).optional(),
-    description: z.string().min(1).optional(),
-    prompt: z.string().min(1).optional(),
-  })
-  .strict()
-
 const limitsSchema = z
   .object({
     maxSubagentNameLength: z.number().int().positive().optional(),
-    maxTaskDescriptionLength: z.number().int().positive().optional(),
-    maxPromptLength: z.number().int().positive().optional(),
   })
   .strict()
 
@@ -72,7 +60,6 @@ const dynamicSubAgentsConfigSchema = z
     $schema: z.string().min(1).optional(),
     version: z.literal(1).default(1),
     defaults: defaultsSchema.optional(),
-    runtime: runtimeSchema.optional(),
     limits: limitsSchema.optional(),
   })
   .strict()
@@ -81,15 +68,6 @@ type OpenCodeAgentConfig = {
   mode?: "primary" | "subagent" | "all"
   description?: string
   hidden?: boolean
-  prompt?: string
-  model?: string
-  variant?: string
-  temperature?: number
-  top_p?: number
-  color?: string
-  steps?: number
-  permission?: unknown
-  [key: string]: unknown
 }
 
 type OpenCodeConfigShape = {
@@ -114,58 +92,65 @@ export async function loadDynamicSubAgentsConfig(): Promise<DynamicSubAgentsConf
 
 export function resolvePolicy(config: DynamicSubAgentsConfig): DynamicSubAgentPolicy {
   return {
-    runtimeAgentName: config.runtime?.agentName ?? DEFAULT_RUNTIME_AGENT_NAME,
-    runtimeDescription: config.runtime?.description ?? DEFAULT_RUNTIME_DESCRIPTION,
-    hidden: config.defaults?.hidden ?? true,
+    hidden: config.defaults?.hidden ?? false,
     options: config.defaults?.options ?? {},
-    allowedModels: normalizeAllowedModels(config.defaults?.allowedModels),
+    allowedModels: resolveAllowedModels(config.defaults),
     allowedVariants: config.defaults?.allowedVariants ?? [],
     maxSubagentNameLength: config.limits?.maxSubagentNameLength ?? DEFAULT_MAX_SUBAGENT_NAME_LENGTH,
-    ...(config.runtime?.prompt ?? DEFAULT_RUNTIME_PROMPT ? { runtimePrompt: config.runtime?.prompt ?? DEFAULT_RUNTIME_PROMPT } : {}),
-    ...(config.defaults?.titlePrefix ? { titlePrefix: config.defaults.titlePrefix } : {}),
     ...(config.defaults?.model ? { model: config.defaults.model } : {}),
     ...(config.defaults?.variant ? { variant: config.defaults.variant } : {}),
+    ...(config.defaults?.prompt ? { prompt: config.defaults.prompt } : {}),
     ...(config.defaults?.temperature !== undefined ? { temperature: config.defaults.temperature } : {}),
     ...(config.defaults?.top_p !== undefined ? { top_p: config.defaults.top_p } : {}),
     ...(config.defaults?.color ? { color: config.defaults.color } : {}),
     ...(config.defaults?.steps !== undefined ? { steps: config.defaults.steps } : {}),
     ...(config.defaults?.permission !== undefined ? { permission: config.defaults.permission } : {}),
-    ...(config.limits?.maxTaskDescriptionLength !== undefined
-      ? { maxTaskDescriptionLength: config.limits.maxTaskDescriptionLength }
-      : {}),
-    ...(config.limits?.maxPromptLength !== undefined ? { maxPromptLength: config.limits.maxPromptLength } : {}),
   }
 }
 
-export function collectConfiguredSubagents(config: OpenCodeConfigShape, hiddenAgentName?: string): ConfiguredSubagentSummary[] {
+export function collectConfiguredSubagents(config: OpenCodeConfigShape): ConfiguredSubagentSummary[] {
   return Object.entries(config.agent ?? {})
     .map(([name, agent]) => toConfiguredSubagent(name, agent))
     .filter((agent): agent is ConfiguredSubagentSummary => Boolean(agent))
-    .filter((agent) => agent.name !== hiddenAgentName)
     .sort((left, right) => left.name.localeCompare(right.name))
 }
 
-export function injectRuntimeSubagent(config: OpenCodeConfigShape, policy: DynamicSubAgentPolicy): string | null {
-  config.agent ??= {}
-  if (policy.runtimeAgentName in config.agent) return policy.runtimeAgentName
+export function buildGeneratedSubagents(
+  policy: DynamicSubAgentPolicy,
+  existingNames: readonly string[],
+): GeneratedSubagentDefinition[] {
+  const variants = policy.allowedVariants.length > 0 ? policy.allowedVariants : [policy.variant]
+  const taken = new Set(existingNames)
+  const generated = new Map<string, GeneratedSubagentDefinition>()
 
-  const runtimeAgent: OpenCodeAgentConfig = {
-    mode: "subagent",
-    hidden: policy.hidden,
-    description: policy.runtimeDescription,
-    ...(policy.runtimePrompt ? { prompt: policy.runtimePrompt } : {}),
-    ...(policy.model ? { model: policy.model } : {}),
-    ...(policy.variant ? { variant: policy.variant } : {}),
-    ...(policy.temperature !== undefined ? { temperature: policy.temperature } : {}),
-    ...(policy.top_p !== undefined ? { top_p: policy.top_p } : {}),
-    ...(policy.color ? { color: policy.color } : {}),
-    ...(policy.steps !== undefined ? { steps: policy.steps } : {}),
-    ...(policy.permission !== undefined ? { permission: policy.permission } : {}),
-    ...policy.options,
+  for (const model of policy.allowedModels) {
+    const baseName = normalizeAgentNameSegment(model.name ?? model.id)
+    if (!baseName) {
+      throw new Error(`Could not derive an agent name from model "${model.id}".`)
+    }
+
+    for (const variant of variants) {
+      const name = buildGeneratedName(baseName, variant)
+
+      if (name.length > policy.maxSubagentNameLength) {
+        throw new Error(
+          `Generated subagent name "${name}" exceeds the configured limit of ${String(policy.maxSubagentNameLength)} characters.`,
+        )
+      }
+
+      if (taken.has(name)) continue
+      if (generated.has(name)) {
+        throw new Error(`Generated subagent name "${name}" is duplicated. Adjust model names in dynamicSubAgents.json.`)
+      }
+
+      generated.set(name, {
+        name,
+        config: buildGeneratedSubagentConfig(policy, model, variant),
+      })
+    }
   }
 
-  config.agent[policy.runtimeAgentName] = runtimeAgent
-  return null
+  return [...generated.values()].sort((left, right) => left.name.localeCompare(right.name))
 }
 
 export function parseModel(model: string): ResolvedModel {
@@ -184,105 +169,59 @@ export function formatModel(model: ResolvedModel): string {
   return `${model.providerID}/${model.modelID}`
 }
 
-export function validateModelSelection(policy: DynamicSubAgentPolicy, model: string): void {
-  if (policy.allowedModels.length > 0 && !policy.allowedModels.some((item) => item.id === model)) {
-    throw new Error(`Model "${model}" is not allowed by dynamicSubAgents.json.`)
-  }
+function buildGeneratedName(baseName: string, variant: string | undefined): string {
+  const prefixedBase = `${GENERATED_NAME_PREFIX}-${baseName}`
+  if (!variant) return prefixedBase
+  return `${prefixedBase}-${normalizeAgentNameSegment(variant)}`
 }
 
-export function validateVariantSelection(policy: DynamicSubAgentPolicy, variant: string): void {
-  if (policy.allowedVariants.length > 0 && !policy.allowedVariants.includes(variant)) {
-    throw new Error(`Variant "${variant}" is not allowed by dynamicSubAgents.json.`)
-  }
-}
-
-export function validateDynamicSubagentRequest(
+function buildGeneratedSubagentConfig(
   policy: DynamicSubAgentPolicy,
-  request: DynamicSubagentRequest,
-  knownSubagentNames: readonly string[],
-): void {
-  if (!SUBAGENT_NAME_PATTERN.test(request.subagentType)) {
-    throw new Error(
-      `Dynamic subagent name "${request.subagentType}" is invalid. Use letters, numbers, ".", "_" or "-".`,
-    )
-  }
+  model: DynamicSubAgentModelOption,
+  variant: string | undefined,
+): GeneratedSubagentConfig {
+  const selection = variant ? `${model.id} (${variant})` : model.id
+  const description = model.description
+    ? `${model.description} Pinned to ${selection}.`
+    : `Generated subagent pinned to ${selection}.`
 
-  if (request.subagentType.length > policy.maxSubagentNameLength) {
-    throw new Error(
-      `Dynamic subagent name "${request.subagentType}" exceeds the configured limit of ${String(policy.maxSubagentNameLength)} characters.`,
-    )
-  }
-
-  if (knownSubagentNames.includes(request.subagentType)) {
-    throw new Error(`Dynamic subagent name "${request.subagentType}" conflicts with an existing named subagent.`)
-  }
-
-  if (policy.maxTaskDescriptionLength !== undefined && request.taskDescription.length > policy.maxTaskDescriptionLength) {
-    throw new Error(
-      `Task description exceeds the configured limit of ${String(policy.maxTaskDescriptionLength)} characters.`,
-    )
-  }
-
-  if (policy.maxPromptLength !== undefined && request.prompt.length > policy.maxPromptLength) {
-    throw new Error(`Task prompt exceeds the configured limit of ${String(policy.maxPromptLength)} characters.`)
+  return {
+    mode: "subagent",
+    model: model.id,
+    description,
+    hidden: policy.hidden,
+    ...(variant ? { variant } : {}),
+    ...(policy.prompt ? { prompt: policy.prompt } : {}),
+    ...(policy.temperature !== undefined ? { temperature: policy.temperature } : {}),
+    ...(policy.top_p !== undefined ? { top_p: policy.top_p } : {}),
+    ...(policy.color ? { color: policy.color } : {}),
+    ...(policy.steps !== undefined ? { steps: policy.steps } : {}),
+    ...(policy.permission !== undefined ? { permission: policy.permission } : {}),
+    ...(Object.keys(policy.options).length > 0 ? { options: policy.options } : {}),
   }
 }
 
-export function buildDynamicTaskPrompt(request: DynamicSubagentRequest): string {
-  const locationLines = [
-    ...(request.workingDirectory ? [`Current working directory: ${request.workingDirectory}`] : []),
-    ...(request.projectRoot && request.projectRoot !== request.workingDirectory
-      ? [`Project root: ${request.projectRoot}`]
-      : []),
-  ]
-
-  return [
-    `Dynamic subagent name: @${request.subagentType}`,
-    `Dynamic subagent specialization: ${request.subagentDescription}`,
-    `Task label: ${request.taskDescription}`,
-    "",
-    ...locationLines,
-    ...(locationLines.length > 0 ? [""] : []),
-    "Complete the following task using that specialization. Treat the specialization as authoritative for this run.",
-    "Resolve relative paths from the current working directory shown above.",
-    "Do not invent absolute filesystem paths. If the task gives a relative project path, use that exact relative path unless you verify a different path exists first.",
-    "",
-    request.prompt,
-  ].join("\n")
+function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
 }
 
-export function buildTaskDescription(
-  subagents: readonly ConfiguredSubagentSummary[],
-  policy: DynamicSubAgentPolicy | undefined,
-): string {
-  const visible = subagents.filter((agent) => !agent.hidden)
-  const lines = visible.map((agent) =>
-    agent.description ? `- ${agent.name}: ${agent.description}` : `- ${agent.name}: existing subagent`,
-  )
+function normalizeAgentNameSegment(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-._]+|[-._]+$/g, "")
+}
 
-  const dynamicLines = policy
-    ? [
-        "Dynamic subagents are enabled.",
-        "To create one, choose a fresh subagent_type, provide subagent_description, and optionally set model and variant.",
-        ...(policy.allowedModels.length > 0
-          ? [
-              "Allowed models:",
-              ...policy.allowedModels.map((model) =>
-                model.description ? `- ${model.id}: ${model.description}` : `- ${model.id}`,
-              ),
-            ]
-          : []),
-        policy.allowedVariants.length > 0 ? `Allowed variants: ${policy.allowedVariants.join(", ")}.` : undefined,
-      ].filter(Boolean)
-    : ["Dynamic subagents are disabled until dynamicSubAgents.json is present."]
+function resolveAllowedModels(defaults: DynamicSubAgentDefaults | undefined): readonly DynamicSubAgentModelOption[] {
+  const models = normalizeAllowedModels(defaults?.allowedModels)
+  if (models.length > 0) return models
+  if (!defaults?.model) return []
+  return [{ id: defaults.model }]
+}
 
-  return [
-    "Launch a specialized subagent task.",
-    visible.length > 0 ? "Named subagents:" : "No named subagents were discovered from config.",
-    ...(lines.length > 0 ? lines : []),
-    "",
-    ...dynamicLines,
-  ].join("\n")
+function normalizeAllowedModels(allowedModels: DynamicSubAgentDefaults["allowedModels"] = []): DynamicSubAgentModelOption[] {
+  return allowedModels.map((entry) => (typeof entry === "string" ? { id: entry } : entry))
 }
 
 function toConfiguredSubagent(name: string, agent: OpenCodeAgentConfig | undefined): ConfiguredSubagentSummary | undefined {
@@ -294,12 +233,4 @@ function toConfiguredSubagent(name: string, agent: OpenCodeAgentConfig | undefin
     hidden: agent.hidden === true,
     ...(typeof agent.description === "string" ? { description: agent.description } : {}),
   }
-}
-
-function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
-}
-
-function normalizeAllowedModels(allowedModels: DynamicSubAgentDefaults["allowedModels"] = []): DynamicSubAgentModelOption[] {
-  return allowedModels.map((entry) => (typeof entry === "string" ? { id: entry } : entry))
 }
