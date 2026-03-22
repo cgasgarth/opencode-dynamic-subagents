@@ -35,6 +35,8 @@ type TaskToolArgs = {
 export type TaskToolState = {
   configuredSubagents: readonly ConfiguredSubagentSummary[]
   runtimeAgentName?: string
+  primaryTools: readonly string[]
+  taskPermissionAgents: ReadonlySet<string>
 }
 
 export function createTaskTool(pluginInput: PluginInput, state: TaskToolState): ToolDefinition {
@@ -77,20 +79,20 @@ export function createTaskTool(pluginInput: PluginInput, state: TaskToolState): 
         throw new Error("Dynamic subagents require ~/.config/opencode/dynamicSubAgents.json.")
       }
 
+      const targetAgent = resolveTargetAgent(args, state, policy, isDynamic)
+      const hasTaskPermission = resolveHasTaskPermission(args, state, policy, isDynamic)
       const parentAssistant = await loadParentAssistantMessage(pluginInput, context)
       const session = await getOrCreateTaskSession(pluginInput, context, args)
       const model = resolveModel(args, policy, parentAssistant, isDynamic)
       const variant = resolveVariant(args, policy, isDynamic)
-      const targetAgent = resolveTargetAgent(args, state, policy, isDynamic)
       const prompt = resolvePrompt(args, policy, state)
 
       context.metadata({
         title: args.description,
         metadata: {
           sessionId: session.id,
-          model: model ?? "agent-default",
-          variant,
-          targetAgent,
+          ...(model ? { model } : {}),
+          ...(variant ? { variant } : {}),
         },
       })
 
@@ -103,11 +105,11 @@ export function createTaskTool(pluginInput: PluginInput, state: TaskToolState): 
       } = {
         agent: targetAgent,
         parts: [{ type: "text", text: prompt }],
+        tools: buildToolSelection(hasTaskPermission, state.primaryTools),
       }
 
       if (model) body.model = model
       if (variant) body.variant = variant
-      if (isDynamic) body.tools = { task: false }
 
       const result = await pluginInput.client.session.prompt({
         path: { id: session.id },
@@ -210,6 +212,20 @@ function resolveTargetAgent(
   return policy.runtimeAgentName
 }
 
+function resolveHasTaskPermission(
+  args: TaskToolArgs,
+  state: TaskToolState,
+  policy: DynamicSubAgentPolicy | undefined,
+  isDynamic: boolean,
+): boolean {
+  if (isDynamic) {
+    if (!policy) throw new Error("Dynamic subagent policy is unavailable.")
+    return state.taskPermissionAgents.has(policy.runtimeAgentName)
+  }
+
+  return state.taskPermissionAgents.has(args.subagent_type)
+}
+
 function resolvePrompt(args: TaskToolArgs, policy: DynamicSubAgentPolicy | undefined, state: TaskToolState): string {
   if (!args.subagent_description) return args.prompt
   if (!policy) throw new Error("Dynamic subagent policy is unavailable.")
@@ -264,4 +280,13 @@ async function getOrCreateTaskSession(
 function extractTextResult(message: SessionMessageResponse): string {
   const textPart = [...message.parts].reverse().find((part) => part.type === "text")
   return textPart?.type === "text" ? textPart.text : "Subagent completed without a text result."
+}
+
+export function buildToolSelection(hasTaskPermission: boolean, primaryTools: readonly string[]): Record<string, boolean> {
+  return {
+    todowrite: false,
+    todoread: false,
+    ...(hasTaskPermission ? {} : { task: false }),
+    ...Object.fromEntries(primaryTools.map((toolID) => [toolID, false])),
+  }
 }
