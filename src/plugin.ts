@@ -4,7 +4,12 @@ import { buildTaskDescription, collectConfiguredSubagents, injectRuntimeSubagent
 import { createTaskTool } from "./task-tool.js"
 import type { ConfiguredSubagentSummary } from "./types.js"
 
-type PluginConfigShape = Parameters<typeof collectConfiguredSubagents>[0]
+type PluginConfigShape = Parameters<typeof collectConfiguredSubagents>[0] & {
+  agent?: Record<string, { permission?: unknown } | undefined>
+  experimental?: {
+    primary_tools?: readonly string[]
+  }
+}
 type SystemTransformOutput = {
   system: string[]
 }
@@ -12,11 +17,15 @@ type SystemTransformOutput = {
 type RuntimeState = {
   configuredSubagents: readonly ConfiguredSubagentSummary[]
   runtimeAgentName?: string
+  primaryTools: readonly string[]
+  taskPermissionAgents: ReadonlySet<string>
 }
 
 export const DynamicSubAgentsPlugin: Plugin = (input) => {
   const state: RuntimeState = {
     configuredSubagents: [],
+    primaryTools: [],
+    taskPermissionAgents: new Set<string>(),
   }
 
   const taskTool = createTaskTool(input, state)
@@ -26,6 +35,8 @@ export const DynamicSubAgentsPlugin: Plugin = (input) => {
       const dynamicConfig = await loadDynamicSubAgentsConfig()
 
       state.configuredSubagents = collectConfiguredSubagents(config)
+      state.primaryTools = config.experimental?.primary_tools ?? []
+      state.taskPermissionAgents = collectTaskPermissionAgents(config.agent)
       delete state.runtimeAgentName
 
       if (!dynamicConfig) return
@@ -49,6 +60,9 @@ export const DynamicSubAgentsPlugin: Plugin = (input) => {
       }
 
       state.runtimeAgentName = policy.runtimeAgentName
+      if (hasExplicitTaskPermission(policy.permission)) {
+        state.taskPermissionAgents = new Set(state.taskPermissionAgents).add(policy.runtimeAgentName)
+      }
       state.configuredSubagents = collectConfiguredSubagents(config, policy.runtimeAgentName)
     },
     tool: {
@@ -61,6 +75,22 @@ export const DynamicSubAgentsPlugin: Plugin = (input) => {
       output.system.push(buildTaskDescription(state.configuredSubagents, policy))
     },
   })
+}
+
+export function collectTaskPermissionAgents(agents: PluginConfigShape["agent"]): ReadonlySet<string> {
+  const result = new Set<string>()
+
+  for (const [name, agent] of Object.entries(agents ?? {})) {
+    if (hasExplicitTaskPermission(agent?.permission)) {
+      result.add(name)
+    }
+  }
+
+  return result
+}
+
+export function hasExplicitTaskPermission(permission: unknown): boolean {
+  return typeof permission === "object" && permission !== null && "task" in permission
 }
 
 export default DynamicSubAgentsPlugin
