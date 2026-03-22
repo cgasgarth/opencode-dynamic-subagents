@@ -37,7 +37,9 @@
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "check": "npm run lint && npm run typecheck && npm run test",
     "clean": "rm -rf dist",
+    "commit-check": "npm run check && npm run build",
     "lint": "eslint . --max-warnings=0",
+    "prepare": "node --import tsx scripts/install-hooks.ts",
     "test": "node --import tsx --test test/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepack": "npm run build"

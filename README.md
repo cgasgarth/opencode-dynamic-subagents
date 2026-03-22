@@ -64,7 +64,7 @@ Default-style configuration:
       },
       {
         "id": "openai/gpt-5.3-codex-spark",
-        "description": "Faster, lower-cost code-focused option for lightweight implementation tasks."
+        "description": "Faster, lower-cost code-focused option for small code implementations or quickly searching for things."
       }
     ],
 
