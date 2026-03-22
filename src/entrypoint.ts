@@ -10,5 +10,3 @@ export type {
   ConfiguredSubagentSummary,
   ResolvedModel,
 } from "./types.js"
-
-export const PACKAGE_NAME = "opencode-dynamic-subagents" as const

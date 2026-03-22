@@ -1,56 +1,110 @@
-# opencode-dynamic-subagents
+# Dynamic Subagents Plugin
 
-OpenCode plugin that adds policy-controlled dynamic subagents. It injects one hidden backing subagent, then lets the orchestration agent choose a runtime subagent name, model, and thinking variant per task.
+[![npm version](https://img.shields.io/npm/v/opencode-dynamic-subagents.svg)](https://www.npmjs.com/package/opencode-dynamic-subagents)
 
-Recommended models:
-- `openai/gpt-5.4`
-- `openai/gpt-5.4-mini`
+Adds policy-controlled dynamic subagents to OpenCode.
 
-## Install
+Instead of forcing you to predefine every subagent up front, this plugin injects one hidden backing subagent and extends the `task` tool so the orchestrating agent can choose a runtime subagent name, specialization, model, and thinking variant for each task.
 
-Add the plugin to `~/.config/opencode/opencode.json`:
+## Installation
 
-```json
+Add to your OpenCode config:
+
+```jsonc
+// opencode.json
 {
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-dynamic-subagents"]
+  "plugin": ["opencode-dynamic-subagents@latest"]
 }
 ```
 
-Create `~/.config/opencode/dynamicSubAgents.json`:
+Using `@latest` ensures you always get the newest version automatically when OpenCode starts.
 
-```json
+Restart OpenCode after installing the plugin.
+
+## How It Works
+
+OpenCode’s built-in task system requires a real named subagent. It does not support anonymous inline subagent definitions. This plugin works within that constraint by:
+
+1. Injecting one hidden runtime subagent into OpenCode config.
+2. Overriding the `task` tool.
+3. Treating `subagent_description` as the signal that the call should run as a dynamic subagent.
+4. Validating `model` and `variant` against `dynamicSubAgents.json`.
+5. Wrapping the task prompt with the runtime specialization before sending it to the hidden backing agent.
+
+Existing named subagents still work normally. The dynamic path is only used when the model provides `subagent_description`.
+
+## Configuration
+
+This plugin reads:
+
+- `~/.config/opencode/dynamicSubAgents.json`
+- or `$OPENCODE_DYNAMIC_SUBAGENTS_CONFIG` if you want to override the path for testing
+
+Restart OpenCode after changing the config.
+
+Important
+
+Defaults are applied automatically. Use this file when you want to restrict models, variants, runtime naming, or prompt size.
+
+Default-style configuration:
+
+```jsonc
 {
   "$schema": "https://github.com/cgasgarth/opencode-dynamic-subagents/blob/main/dynamicSubAgents.schema.json",
   "version": 1,
   "defaults": {
+    // Default model used for dynamic subagents when no explicit model is passed
     "model": "openai/gpt-5.4-mini",
+
+    // Restrict runtime model selection
     "allowedModels": ["openai/gpt-5.4", "openai/gpt-5.4-mini"],
+
+    // Restrict reasoning / provider variant selection
     "allowedVariants": ["low", "medium", "high", "xhigh"]
   },
+
   "runtime": {
-    "agentName": "dynamic-subagent-runtime"
+    // Hidden backing subagent name injected into OpenCode
+    "agentName": "dynamic-subagent-runtime",
+
+    // Optional description for the hidden runtime subagent
+    "description": "Internal runtime for dynamic subagent execution."
   },
+
   "limits": {
-    "maxSubagentNameLength": 64
+    // Guardrails for ad hoc subagent creation
+    "maxSubagentNameLength": 64,
+    "maxTaskDescriptionLength": 120,
+    "maxPromptLength": 8000
   }
 }
 ```
 
 ## Usage
 
-For an existing named subagent, use `task` normally.
+For an existing named subagent, use the `task` tool normally.
 
-For an ad hoc dynamic subagent, provide:
-- `subagent_type`: the runtime name
-- `subagent_description`: the specialization
-- `model` and `variant`: optional, validated against policy
+For a dynamic subagent, the orchestrating agent should provide:
+
+- `subagent_type`
+- `subagent_description`
+- optional `model`
+- optional `variant`
 
 Example intent:
 
 ```text
-Create a new subagent named perf-auditor, specialize it in runtime bottlenecks, and run it with openai/gpt-5.4-mini at high reasoning.
+Create a dynamic subagent named perf-auditor. Specialize it in runtime bottlenecks. Run it with openai/gpt-5.4 at high reasoning and have it inspect the request path implementation.
 ```
+
+If the selected model or variant is not allowed, the task call fails immediately with a validation error.
+
+## Notes
+
+- Recommended OpenAI model strings: `openai/gpt-5.4`, `openai/gpt-5.4-mini`
+- OpenCode still requires a concrete agent name for task execution, so this plugin uses a hidden runtime subagent internally
+- `$schema` is supported in `dynamicSubAgents.json`
+- The plugin has been smoke-tested locally with the installed `opencode` CLI using both allowed and denied model selections
 
 ## Dev
 
